@@ -1,0 +1,105 @@
+# -----------------------------
+# OS FILES
+# -----------------------------
+.DS_Store
+Thumbs.db
+
+# -----------------------------
+# ENV FILES
+# -----------------------------
+.env
+.env.*
+*.env
+*/.env
+*/.env.*
+.env.local
+.env.production
+.env.staging
+!.env.example
+
+# -----------------------------
+# NODE / PNPM
+# -----------------------------
+node_modules/
+**/node_modules/
+.pnpm-store/
+
+# -----------------------------
+# BUILD OUTPUTS
+# -----------------------------
+dist/
+build/
+out/
+.next/
+.next/*
+.next/cache/
+**/dist/
+**/build/
+.turbo/
+
+# -----------------------------
+# GO BUILD FILES
+# -----------------------------
+bin/
+*.exe
+*.out
+*.test
+*.prof
+go.work.sum
+
+# -----------------------------
+# PYTHON (if any workers)
+# -----------------------------
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache/
+**/.mypy_cache/
+venv/
+**/venv/
+
+# -----------------------------
+# DOCKER
+# -----------------------------
+docker-data/
+docker-volume/
+pgdata/
+postgres-data/
+docker-compose.override.yml
+*.pid
+
+# -----------------------------
+# LOGS
+# -----------------------------
+logs/
+**/logs/
+*.log
+*.log.*
+
+# -----------------------------
+# CACHE
+# -----------------------------
+.cache/
+**/.cache/
+coverage/
+coverage-final.json
+
+# -----------------------------
+# EDITOR
+# -----------------------------
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# -----------------------------
+# ARCHIVES
+# -----------------------------
+*.tar
+*.tgz
+*.zip
+
+ssl/
+generate_hashes.go
