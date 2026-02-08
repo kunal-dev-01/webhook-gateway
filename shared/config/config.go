@@ -11,6 +11,10 @@ import (
 
 type Config struct {
 	Database DatabaseConfig
+	Redis    RedisConfig
+	JWT      JWTConfig
+	TOTP     TOTPConfig
+	Security SecurityConfig
 	App      AppConfig
 }
 
@@ -44,6 +48,57 @@ type DatabaseConfig struct {
 	RetryDelay    time.Duration
 }
 
+type RedisConfig struct {
+	// Connection
+	Host     string
+	Port     int
+	Password string
+	DB       int
+	
+	// Connection Pool
+	MaxRetries      int
+	MinIdleConns    int
+	PoolSize        int
+	PoolTimeout     time.Duration
+	MaxConnAge      time.Duration
+	IdleTimeout     time.Duration
+	IdleCheckFreq   time.Duration
+	
+	// Timeouts
+	DialTimeout  time.Duration
+	ReadTimeout  time.Duration
+	WriteTimeout time.Duration
+	
+	// TLS/SSL
+	TLSEnabled bool
+	TLSCert    string
+	TLSKey     string
+	TLSCA      string
+	
+	// Advanced
+	EnableTracing      bool
+	RetryAttempts      int
+	RetryDelay         time.Duration
+}
+
+type JWTConfig struct {
+	Secret               string
+	AccessTokenDuration  time.Duration
+	RefreshTokenDuration time.Duration
+	Issuer               string
+}
+
+type TOTPConfig struct {
+	Issuer string
+	AESKey string // 32 bytes for AES-256
+}
+
+type SecurityConfig struct {
+	MaxLoginAttempts int
+	LockoutDuration  time.Duration
+	RateLimitMax     int
+}
+
 type AppConfig struct {
 	Env  string
 	Port string
@@ -60,8 +115,8 @@ func Load() (*Config, error) {
 			Port:            getEnvAsInt("DB_PORT", 5432),
 			User:            getEnv("DB_USER", "postgres"),
 			Password:        getEnv("DB_PASSWORD", ""),
-			DBName:          getEnv("DB_NAME", "postgres"),
-			SSLMode:         getEnv("DB_SSLMODE", "require"),
+			DBName:          getEnv("DB_NAME", "upnixo"),
+			SSLMode:         getEnv("DB_SSLMODE", "disable"),
 			SSLCert:         getEnv("DB_SSLCERT", ""),
 			SSLKey:          getEnv("DB_SSLKEY", ""),
 			SSLRootCert:     getEnv("DB_SSLROOTCERT", ""),
@@ -76,6 +131,48 @@ func Load() (*Config, error) {
 			RetryAttempts:   getEnvAsInt("DB_RETRY_ATTEMPTS", 3),
 			RetryDelay:      getEnvAsDuration("DB_RETRY_DELAY", 5*time.Second),
 		},
+		Redis: RedisConfig{
+			Host:     getEnv("REDIS_HOST", "127.0.0.1"),
+			Port:     getEnvAsInt("REDIS_PORT", 6379),
+			Password: getEnv("REDIS_PASSWORD", ""),
+			DB:       getEnvAsInt("REDIS_DB", 0),
+			
+			MaxRetries:    getEnvAsInt("REDIS_MAX_RETRIES", 3),
+			MinIdleConns:  getEnvAsInt("REDIS_MIN_IDLE_CONNS", 5),
+			PoolSize:      getEnvAsInt("REDIS_POOL_SIZE", 50),
+			PoolTimeout:   getEnvAsDuration("REDIS_POOL_TIMEOUT", 5*time.Second),
+			MaxConnAge:    getEnvAsDuration("REDIS_MAX_CONN_AGE", 30*time.Minute),
+			IdleTimeout:   getEnvAsDuration("REDIS_IDLE_TIMEOUT", 10*time.Minute),
+			IdleCheckFreq: getEnvAsDuration("REDIS_IDLE_CHECK_FREQ", 1*time.Minute),
+			
+			DialTimeout:  getEnvAsDuration("REDIS_DIAL_TIMEOUT", 5*time.Second),
+			ReadTimeout:  getEnvAsDuration("REDIS_READ_TIMEOUT", 3*time.Second),
+			WriteTimeout: getEnvAsDuration("REDIS_WRITE_TIMEOUT", 3*time.Second),
+			
+			TLSEnabled: getEnvAsBool("REDIS_TLS_ENABLED", false),
+			TLSCert:    getEnv("REDIS_TLS_CERT", ""),
+			TLSKey:     getEnv("REDIS_TLS_KEY", ""),
+			TLSCA:      getEnv("REDIS_TLS_CA", ""),
+			
+			EnableTracing: getEnvAsBool("REDIS_ENABLE_TRACING", false),
+			RetryAttempts: getEnvAsInt("REDIS_RETRY_ATTEMPTS", 3),
+			RetryDelay:    getEnvAsDuration("REDIS_RETRY_DELAY", 1*time.Second),
+		},
+		JWT: JWTConfig{
+			Secret:               getEnv("JWT_SECRET", ""),
+			AccessTokenDuration:  getEnvAsDuration("ACCESS_TOKEN_DURATION", 15*time.Minute),
+			RefreshTokenDuration: getEnvAsDuration("REFRESH_TOKEN_DURATION", 7*24*time.Hour),
+			Issuer:               getEnv("JWT_ISSUER", "upnixo.com"),
+		},
+		TOTP: TOTPConfig{
+			Issuer: getEnv("TOTP_ISSUER", "Upnixo"),
+			AESKey: getEnv("TOTP_AES_KEY", ""),
+		},
+		Security: SecurityConfig{
+			MaxLoginAttempts: getEnvAsInt("MAX_LOGIN_ATTEMPTS", 5),
+			LockoutDuration:  getEnvAsDuration("LOCKOUT_DURATION", 30*time.Minute),
+			RateLimitMax:     getEnvAsInt("RATE_LIMIT_MAX", 100),
+		},
 		App: AppConfig{
 			Env:  getEnv("APP_ENV", "development"),
 			Port: getEnv("APP_PORT", "8080"),
@@ -86,11 +183,31 @@ func Load() (*Config, error) {
 	if cfg.Database.Password == "" {
 		return nil, fmt.Errorf("DB_PASSWORD is required")
 	}
+	
+	if cfg.JWT.Secret == "" {
+		return nil, fmt.Errorf("JWT_SECRET is required")
+	}
+	
+	if len(cfg.JWT.Secret) < 32 {
+		return nil, fmt.Errorf("JWT_SECRET must be at least 32 characters")
+	}
+	
+	if cfg.TOTP.AESKey == "" {
+		return nil, fmt.Errorf("TOTP_AES_KEY is required")
+	}
+	
+	if len(cfg.TOTP.AESKey) != 64 { // 32 bytes hex = 64 chars
+		return nil, fmt.Errorf("TOTP_AES_KEY must be 64 hex characters (32 bytes)")
+	}
+
+	if cfg.App.Env == "production" && cfg.Redis.Password == "" {
+		return nil, fmt.Errorf("REDIS_PASSWORD is required in production")
+	}
 
 	return cfg, nil
 }
 
-// Helper functions
+// Helper functions (same as before)
 func getEnv(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -138,7 +255,6 @@ func (c *DatabaseConfig) GetDSN() string {
 		int(c.ConnectTimeout.Seconds()),
 	)
 
-	// Add SSL certificates if provided
 	if c.SSLCert != "" {
 		dsn += fmt.Sprintf(" sslcert=%s", c.SSLCert)
 	}
@@ -150,4 +266,9 @@ func (c *DatabaseConfig) GetDSN() string {
 	}
 
 	return dsn
+}
+
+// GetRedisAddr returns Redis address
+func (c *RedisConfig) GetRedisAddr() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
 }
