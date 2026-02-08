@@ -73,7 +73,7 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) er
 		ID:           uuid.New(),
 		Email:        strings.ToLower(req.Email),
 		FullName:     req.FullName,
-		Role:         models.RoleViewer, // Default role
+		Role:         models.RoleAdmin,
 		Status:       models.StatusActive,
 		Timezone:     "UTC",
 		Language:     "en",
