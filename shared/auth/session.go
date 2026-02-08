@@ -210,7 +210,7 @@ func (s *SessionManager) EnforceMaxSessions(ctx context.Context, userID uuid.UUI
 	// Sort by last activity (oldest first)
 	// Delete oldest sessions until under limit
 	excessCount := len(sessions) - maxSessions
-	for i := 0; i < excessCount; i++ {
+	for range excessCount {
 		// Find oldest session
 		oldestIdx := 0
 		for j := 1; j < len(sessions); j++ {

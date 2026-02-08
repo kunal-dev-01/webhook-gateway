@@ -16,6 +16,7 @@ type Config struct {
 	TOTP     TOTPConfig
 	Security SecurityConfig
 	Frontend FrontendConfig
+	AWS      AWSConfig
 	App      AppConfig
 }
 
@@ -106,6 +107,14 @@ type FrontendConfig struct {
 	ResetUrl    string
 }
 
+type AWSConfig struct {
+	AWSAccessKey   string
+	AWSSecretKey   string
+	AWSRegion      string
+	AWSSQSQueueURL string
+	AWSFromEmail   string
+}
+
 type AppConfig struct {
 	Env  string
 	Port string
@@ -184,6 +193,13 @@ func Load() (*Config, error) {
 			FrontendUrl: getEnv("FRONTEND_URL", "http://localhost:4321"),
 			VerificationUrl: getEnv("VERIFICATION_URL", "http://localhost:4321/auth/verify"),
 			ResetUrl:    getEnv("RESET_URL", "http://localhost:4321/auth/reset"),
+		},
+		AWS: AWSConfig{
+			AWSAccessKey:   getEnv("AWS_ACCESS_KEY", ""),
+			AWSSecretKey:   getEnv("AWS_SECRET_KEY", ""),
+			AWSRegion:      getEnv("AWS_REGION", "us-east-1"),
+			AWSSQSQueueURL: getEnv("AWS_SQS_QUEUE_URL", ""),
+			AWSFromEmail:   getEnv("AWS_FROM_EMAIL", ""),
 		},
 		App: AppConfig{
 			Env:  getEnv("APP_ENV", "development"),
