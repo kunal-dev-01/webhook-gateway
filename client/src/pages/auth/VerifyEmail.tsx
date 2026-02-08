@@ -128,19 +128,7 @@ const VerifyEmail = () => {
           {/* Success Message Box */}
           <div className="bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-900 rounded-xl p-4 mb-6">
             <div className="flex items-start gap-3">
-              <svg
-                className="w-5 h-5 text-green-600 dark:text-green-500 mt-0.5 shrink-0"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
+              <CircleCheck className="w-5 h-5 text-green-600 dark:text-green-500 mt-0.5 shrink-0" /> 
               <div className="text-left">
                 <p className="text-sm font-semibold text-green-900 dark:text-green-300 mb-1">
                   Account Activated
@@ -186,19 +174,7 @@ const VerifyEmail = () => {
         {/* Error Message Box */}
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900 rounded-xl p-4 mb-6">
           <div className="flex items-start gap-3">
-            <svg
-              className="w-5 h-5 text-red-600 dark:text-red-500 mt-0.5 shrink-0"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+            <Error className="w-5 h-5 text-red-600 dark:text-red-500 mt-0.5 shrink-0" />
             <div className="text-left">
               <p className="text-sm font-semibold text-red-900 dark:text-red-300 mb-1">
                 Possible Reasons:

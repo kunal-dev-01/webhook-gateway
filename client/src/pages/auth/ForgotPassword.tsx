@@ -126,7 +126,7 @@ const ForgotPassword = () => {
 
         {/* Instructions */}
         <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-900 rounded-xl p-4 mb-6">
-          <h3 className="text-sm font-semibold text-indigo-900 dark:text-indigo-300 mb-2">
+          <h3 aria-label="steps" className="text-sm font-semibold text-indigo-900 dark:text-indigo-300 mb-2">
             Next Steps:
           </h3>
           <ol className="text-sm text-indigo-700 dark:text-indigo-400 space-y-1 list-decimal list-inside">

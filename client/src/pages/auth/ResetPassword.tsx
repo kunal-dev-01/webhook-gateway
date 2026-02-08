@@ -146,11 +146,11 @@ const ResetPassword = () => {
           </div>
 
           {/* Manual Redirect Button */}
-          <a aria-label="sign in" href="/auth/login">
+          <Link aria-label="sign in" to="/auth/login">
             <button className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2.5 rounded-xl transition-all duration-200">
               Continue to Login
             </button>
-          </a>
+          </Link>
         </div>
       </div>
     );
@@ -202,29 +202,30 @@ const ResetPassword = () => {
 
           {/* Action Buttons */}
           <div className="space-y-3">
-            <a aria-label="Request New Reset Link" href="/auth/forgot-password">
+            <Link aria-label="Request New Reset Link" to="/auth/forgot-password">
               <button className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2.5 rounded-xl transition-all duration-200">
                 Request New Reset Link
               </button>
-            </a>
+            </Link>
 
-            <a aria-label="Back to Login" href="/auth/login">
+            <Link aria-label="Back to Login" to="/auth/login">
               <button className="w-full border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-200 font-semibold py-2.5 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all duration-200 mt-4">
                 Back to Login
               </button>
-            </a>
+            </Link>
           </div>
 
           {/* Help Text */}
           <p className="text-xs text-zinc-500 dark:text-zinc-500 mt-6">
             Need help?{" "}
-            <a
+            <Link
               aria-label="Contact Support"
-              href="/company/support"
+              to="https://upnixo.com/company/support"
+              target="_blank"
               className="text-indigo-600 dark:text-indigo-400 hover:underline"
             >
               Contact Support
-            </a>
+            </Link>
           </p>
         </div>
       </div>
