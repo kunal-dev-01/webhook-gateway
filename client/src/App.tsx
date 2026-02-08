@@ -7,6 +7,10 @@ const AuthLayout = lazy(() => import("./layouts/AuthLayout"));
 
 // AUTH PAGES
 const Login = lazy(() => import("./pages/auth/Login"));
+const Register = lazy(() => import("./pages/auth/Register"));
+const VerifyEmail = lazy(() => import("./pages/auth/VerifyEmail"));
+const ForgotPassword = lazy(() => import("./pages/auth/ForgotPassword"));
+const ResetPassword = lazy(() => import("./pages/auth/ResetPassword"));
 
 // NOT FOUND
 const NotFound = lazy(() => import("./pages/notfound/NotFound"));
@@ -23,6 +27,10 @@ const App = () => {
       <Routes>
         <Route element={<AuthLayout />}>
           <Route path="/auth/login" element={<Login />} />
+          <Route path="/auth/register" element={<Register />} />
+          <Route path="/auth/verify-email" element={<VerifyEmail />} />
+          <Route path="/auth/forgot-password" element={<ForgotPassword />} />
+          <Route path="/auth/reset-password" element={<ResetPassword />} />
         </Route>
 
         <Route path="*" element={<NotFound />} />

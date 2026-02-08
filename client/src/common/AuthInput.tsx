@@ -8,9 +8,10 @@ interface AuthInputProps {
   register: any; 
   error?: string;
   name: string;
+  disabled?: boolean;
 }
 
-const AuthInput = memo(({ label, type, placeholder, register, error, name }: AuthInputProps) => {
+const AuthInput = memo(({ label, type, placeholder, register, error, name, disabled }: AuthInputProps) => {
   const [showPassword, setShowPassword] = useState(false);
   const isPassword = type === "password";
 
@@ -21,15 +22,16 @@ const AuthInput = memo(({ label, type, placeholder, register, error, name }: Aut
       </label>
       <div className="relative group">
         <input
+          disabled={disabled}
           type={isPassword ? (showPassword ? "text" : "password") : type}
           placeholder={placeholder}
           {...register(name)}
-          className={`w-full px-4 py-2.5 bg-transparent border rounded-xl outline-none transition-all duration-200
+          className={`w-full px-4 pr-10 py-2.5 bg-transparent border rounded-xl outline-none transition-all duration-200
             ${error 
               ? "border-red-500 focus:ring-2 focus:ring-red-200 dark:focus:ring-red-900/30" 
-              : "border-zinc-200 dark:border-zinc-800 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+              : "border-zinc-200 dark:border-zinc-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10"
             } 
-            dark:text-white text-zinc-900 placeholder:text-zinc-400 dark:placeholder:text-zinc-600`}
+            dark:text-white text-zinc-900 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 disabled:cursor-not-allowed disabled:bg-zinc-100 dark:disabled:bg-zinc-800 disabled:text-zinc-500 dark:disabled:text-zinc-600`}
         />
         
         {isPassword && (

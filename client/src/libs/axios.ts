@@ -4,7 +4,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from "axios";
 import { useAuthStore } from "@/store/auth.store";
-import { ApiError, type ApiErrorResponse } from "../types/api.types";
+import { ApiError, type ApiErrorResponse } from "@/types/api.types";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api/v1";
 
@@ -78,7 +78,7 @@ class AxiosClient {
             return this.instance(originalRequest);
           } catch (refreshError) {
             useAuthStore.getState().clearAuth();
-            window.location.href = "/login";
+            window.location.href = "/auth/login";
             return Promise.reject(refreshError);
           } finally {
             this.isRefreshing = false;
