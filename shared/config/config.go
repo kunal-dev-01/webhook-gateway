@@ -15,6 +15,7 @@ type Config struct {
 	JWT      JWTConfig
 	TOTP     TOTPConfig
 	Security SecurityConfig
+	Frontend FrontendConfig
 	App      AppConfig
 }
 
@@ -99,6 +100,12 @@ type SecurityConfig struct {
 	RateLimitMax     int
 }
 
+type FrontendConfig struct {
+	FrontendUrl string
+	VerificationUrl string
+	ResetUrl    string
+}
+
 type AppConfig struct {
 	Env  string
 	Port string
@@ -172,6 +179,11 @@ func Load() (*Config, error) {
 			MaxLoginAttempts: getEnvAsInt("MAX_LOGIN_ATTEMPTS", 5),
 			LockoutDuration:  getEnvAsDuration("LOCKOUT_DURATION", 30*time.Minute),
 			RateLimitMax:     getEnvAsInt("RATE_LIMIT_MAX", 100),
+		},
+		Frontend: FrontendConfig{
+			FrontendUrl: getEnv("FRONTEND_URL", "http://localhost:4321"),
+			VerificationUrl: getEnv("VERIFICATION_URL", "http://localhost:4321/auth/verify"),
+			ResetUrl:    getEnv("RESET_URL", "http://localhost:4321/auth/reset"),
 		},
 		App: AppConfig{
 			Env:  getEnv("APP_ENV", "development"),
