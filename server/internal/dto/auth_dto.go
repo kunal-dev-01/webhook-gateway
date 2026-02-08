@@ -143,6 +143,25 @@ type CreateUserRequest struct {
 	Language string            `json:"language" validate:"omitempty,len=2"`
 }
 
+// ============================================================================
+// Current User (/auth/me)
+// ============================================================================
+
+// MeResponse represents current logged-in user
+type MeResponse struct {
+	ID               uuid.UUID         `json:"id"`
+	Email            string            `json:"email"`
+	FullName         string            `json:"full_name"`
+	Phone            *string           `json:"phone,omitempty"`
+	Role             models.UserRole   `json:"role"`
+	Status           models.UserStatus `json:"status"`
+	EmailVerified    bool              `json:"email_verified"`
+	TwoFactorEnabled bool              `json:"two_factor_enabled"`
+	LastLoginAt      *time.Time        `json:"last_login_at,omitempty"`
+	CreatedAt        time.Time         `json:"created_at"`
+	PasswordChangedAt time.Time        `json:"password_changed_at"`
+}
+
 // UpdateUserRequest represents user update request
 type UpdateUserRequest struct {
 	FullName *string             `json:"full_name" validate:"omitempty,min=2,max=255"`

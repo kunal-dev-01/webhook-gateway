@@ -317,6 +317,32 @@ func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 }
 
 // ============================================================================
+// Get Current User
+// ============================================================================
+
+// GetMe returns current logged-in user info
+// GET /auth/me
+func (h *AuthHandler) GetMe(c *fiber.Ctx) error {
+	userID, err := middleware.GetUserID(c)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(dto.ErrorResponse{
+			Success: false,
+			Error:   "Unauthorized",
+		})
+	}
+
+	user, err := h.authService.GetMe(c.Context(), userID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(dto.ErrorResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+	}
+
+	return c.JSON(user)
+}
+
+// ============================================================================
 // Token Refresh
 // ============================================================================
 
@@ -608,8 +634,8 @@ func (h *AuthHandler) setRefreshTokenCookie(c *fiber.Ctx, refreshToken string) {
 		Path:     "/",
 		MaxAge:   7 * 24 * 60 * 60, // 7 days in seconds
 		HTTPOnly: true,
-		Secure:   true, // Set to true in production with HTTPS
-		SameSite: "Strict",
+		Secure:   false, // Set to true in production with HTTPS
+		SameSite: "lax",
 	})
 }
 
@@ -621,8 +647,8 @@ func (h *AuthHandler) clearRefreshTokenCookie(c *fiber.Ctx) {
 		Path:     "/",
 		MaxAge:   -1,
 		HTTPOnly: true,
-		Secure:   true,
-		SameSite: "Strict",
+		Secure:   false, // Set to true in production with HTTPS
+		SameSite: "lax",
 		Expires:  time.Now().Add(-1 * time.Hour),
 	})
 }
