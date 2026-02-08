@@ -99,7 +99,7 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 	authProtected := auth.Group("", authMiddleware.RequireAuth())
 
 	// Password Management
-	authProtected.Post("/change-password", deps.AuthHandler.ChangePassword)
+	authProtected.Patch("/change-password", deps.AuthHandler.ChangePassword)
 
 	// Logout
 	authProtected.Post("/logout", deps.AuthHandler.Logout)
