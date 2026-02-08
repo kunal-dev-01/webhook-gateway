@@ -35,7 +35,8 @@
       "@svg/*" : ["src/svg/*"],
       "@libs/*" : ["src/libs/*"],
       "@pages/*" : ["src/pages/*"],
-      "@layouts/*": ["src/layouts/*"]
+      "@layouts/*": ["src/layouts/*"],
+      "@types/*": ["src/types/*"]
     }
   },
   "include": ["src"]
