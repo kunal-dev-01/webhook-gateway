@@ -10,6 +10,7 @@ require (
 	github.com/lib/pq v1.11.1
 	github.com/pquerna/otp v1.5.0
 	github.com/redis/go-redis/v9 v9.17.3
+	github.com/rs/zerolog v1.34.0
 	golang.org/x/crypto v0.47.0
 )
 
