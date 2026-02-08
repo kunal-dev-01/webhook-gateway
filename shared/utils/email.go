@@ -5,16 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 
-	appconfig "shared/config"
+	appConfig "shared/config"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/config" 
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/rs/zerolog"
 )
 
-/* ───────────────────────── Types ───────────────────────── */
+/* ───────────────────────── Types ─────────────────────────────────────── */
 
 type EmailService struct {
 	sqsClient *sqs.Client
@@ -31,116 +31,108 @@ type EmailMessage struct {
 	TemplateData map[string]string `json:"template_data"`
 }
 
-/* ───────────────────────── Constructor ───────────────────────── */
+/* ───────────────────────── Constructor ───────────────────────────────── */
 
+// FIX 2: Parameter type ko 'appConfig.AWSConfig' kar diya
 func NewEmailService(
-	cfg *appconfig.AWSConfig,
+	cfg *appConfig.AWSConfig, 
 	logger zerolog.Logger,
 ) (*EmailService, error) {
-
 	ctx := context.Background()
-
 	awsCfg, err := config.LoadDefaultConfig(ctx,
 		config.WithRegion(cfg.AWSRegion),
 		config.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(
-				cfg.AWSAccessKey,
-				cfg.AWSSecretKey,
-				"",
-			),
+			credentials.NewStaticCredentialsProvider(cfg.AWSAccessKey, cfg.AWSSecretKey, ""),
 		),
 	)
-
 	if err != nil {
-		return nil, fmt.Errorf("aws config load failed: %w", err)
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	logger.Info().
-		Str("region", cfg.AWSRegion).
-		Msg("AWS SQS initialized")
+	logger.Info().Str("region", cfg.AWSRegion).Msg("AWS SQS client initialized")
 
 	return &EmailService{
 		sqsClient: sqs.NewFromConfig(awsCfg),
-		queueURL:  cfg.AWSSQSQueueURL,
-		fromEmail: cfg.AWSFromEmail,
+		queueURL:  cfg.AWSSQSQueueURL, // Correct field name from config struct
+		fromEmail: cfg.AWSFromEmail,   // Correct field name from config struct
 		logger:    logger,
 	}, nil
 }
 
-/* ───────────────────────── Internal ───────────────────────── */
+/* ───────────────────────── Internal ──────────────────────────────────── */
 
-func (s *EmailService) send(ctx context.Context, msg EmailMessage) error {
-
-	if len(msg.To) == 0 {
-		return fmt.Errorf("recipient is empty")
-	}
-
+func (s *EmailService) sendEmail(ctx context.Context, msg EmailMessage) error {
 	if msg.From == "" {
 		msg.From = s.fromEmail
+	}
+	if len(msg.To) == 0 {
+		return fmt.Errorf("sendEmail: To field is empty")
 	}
 
 	body, err := json.Marshal(msg)
 	if err != nil {
+		s.logger.Error().Err(err).Msg("failed to marshal email message")
 		return fmt.Errorf("marshal message: %w", err)
 	}
 
-	out, err := s.sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
+	result, err := s.sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
 		QueueUrl:    aws.String(s.queueURL),
 		MessageBody: aws.String(string(body)),
 	})
-
 	if err != nil {
-		s.logger.Error().
-			Err(err).
-			Str("to", msg.To[0]).
-			Msg("SQS send failed")
-
-		return fmt.Errorf("sqs send: %w", err)
+		// FIX 4: Safe check to ensure msg.To exists before logging
+		toEmail := ""
+		if len(msg.To) > 0 {
+			toEmail = msg.To[0]
+		}
+		s.logger.Error().Err(err).Str("to", toEmail).Msg("failed to send message to SQS")
+		return fmt.Errorf("send to SQS: %w", err)
 	}
 
 	s.logger.Info().
-		Str("id", *out.MessageId).
+		Str("message_id", *result.MessageId).
 		Str("to", msg.To[0]).
 		Str("template", msg.TemplateName).
-		Msg("email queued")
+		Msg("email queued successfully")
 
 	return nil
 }
 
-/* ───────────────────────── Public API ───────────────────────── */
-
-func (s *EmailService) SendVerification(
-	ctx context.Context,
-	to, token, verifyURL, name string,
-) error {
-
+/* ───────────────────────── Public API ────────────────────────────────── */
+func (s *EmailService) SendVerificationEmail(ctx context.Context, to, token, verifyURL, name string) error {
 	msg := EmailMessage{
 		To:           []string{to},
-		Subject:      "Verify Your Email",
+		From:         s.fromEmail,
+		Subject:      "Verify Your Email Address",
 		TemplateName: "VerifyEmail",
 		TemplateData: map[string]string{
-			"url":  fmt.Sprintf("%s?token=%s", verifyURL, token),
-			"name": name,
+			"verification_url": fmt.Sprintf("%s?token=%s", verifyURL, token),
+			"user_name":        name,
 		},
 	}
 
-	return s.send(ctx, msg)
+	if err := s.sendEmail(ctx, msg); err != nil {
+		s.logger.Error().Err(err).Str("email", to).Msg("failed to send verification email")
+		return fmt.Errorf("send verification email: %w", err)
+	}
+	return nil
 }
 
-func (s *EmailService) SendPasswordReset(
-	ctx context.Context,
-	to, token, resetURL, name string,
-) error {
-
+func (s *EmailService) SendPasswordResetEmail(ctx context.Context, to, token, resetURL, name string) error {
 	msg := EmailMessage{
 		To:           []string{to},
+		From:         s.fromEmail,
 		Subject:      "Reset Your Password",
 		TemplateName: "ResetPassword",
 		TemplateData: map[string]string{
-			"url":  fmt.Sprintf("%s?token=%s", resetURL, token),
-			"name": name,
+			"reset_url": fmt.Sprintf("%s?token=%s", resetURL, token),
+			"user_name": name,
 		},
 	}
 
-	return s.send(ctx, msg)
+	if err := s.sendEmail(ctx, msg); err != nil {
+		s.logger.Error().Err(err).Str("email", to).Msg("failed to send password reset email")
+		return fmt.Errorf("send password reset email: %w", err)
+	}
+	return nil
 }

@@ -195,9 +195,9 @@ func Load() (*Config, error) {
 			ResetUrl:    getEnv("RESET_URL", "http://localhost:4321/auth/reset"),
 		},
 		AWS: AWSConfig{
-			AWSAccessKey:   getEnv("AWS_ACCESS_KEY", ""),
-			AWSSecretKey:   getEnv("AWS_SECRET_KEY", ""),
-			AWSRegion:      getEnv("AWS_REGION", "us-east-1"),
+			AWSAccessKey:   getEnv("AWS_ACCESS_KEY_ID", ""),
+			AWSSecretKey:   getEnv("AWS_SECRET_ACCESS_KEY", ""),
+			AWSRegion:      getEnv("AWS_REGION", "eu-central-1"),
 			AWSSQSQueueURL: getEnv("AWS_SQS_QUEUE_URL", ""),
 			AWSFromEmail:   getEnv("AWS_FROM_EMAIL", ""),
 		},

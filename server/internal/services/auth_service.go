@@ -94,8 +94,8 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) er
 
 	// Send verification email
 	if err := s.sendVerificationEmail(ctx, user); err != nil {
-		// Log error but don't fail registration
-		fmt.Printf("Failed to send verification email: %v\n", err)
+		fmt.Printf("User created but failed to send verification email: %v\n", err)
+		return nil
 	}
 
 	return nil
@@ -309,7 +309,7 @@ func (s *AuthService) sendVerificationEmail(ctx context.Context, user *models.Us
 	}
 
 	// Send email
-	return s.emailService.SendVerification(
+	return s.emailService.SendVerificationEmail(
 		ctx,
 		user.Email,
 		token,
@@ -352,7 +352,7 @@ func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
 	}
 
 	// Send email
-	return s.emailService.SendPasswordReset(
+	return s.emailService.SendPasswordResetEmail(
 		ctx,
 		user.Email,
 		token,
