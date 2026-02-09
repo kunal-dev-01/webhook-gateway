@@ -23,7 +23,7 @@ const Toast = ({ status, message, onClose }: ToastProps) => {
   const isSuccess = status === 'success';
 
   return (
-    <div className={`flex items-center gap-3 px-4 py-3 rounded-xl mb-4 text-sm font-medium border animate-in slide-in-from-top-2 ${
+    <div className={`flex items-center gap-3 px-4 py-3 rounded-xl mb-4 text-sm font-medium border ${
       isSuccess 
         ? 'bg-emerald-50 border-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-900 dark:text-emerald-400' 
         : 'bg-red-50 border-red-100 text-red-700 dark:bg-red-900/20 dark:border-red-900 dark:text-red-400'

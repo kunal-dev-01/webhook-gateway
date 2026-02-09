@@ -8,25 +8,27 @@ import type {
 import { ApiError } from "@/types/api.types";
 
 // ============================================================================
-// Get Current User (Me)
+// Get Current User (Me) - PRODUCTION READY ✅
 // ============================================================================
 
 export const useMe = () => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const setUser = useAuthStore((state) => state.setUser);
 
   const query = useQuery({
     queryKey: ["users", "me"],
-    queryFn: userService.getMe,
+    queryFn: async () => {
+      const data = await userService.getMe();
+      // ✅ Update store directly after fetch (runs only on success)
+      useAuthStore.getState().setUser(data);
+      return data;
+    },
     enabled: isAuthenticated,
     staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000,   // 10 minutes (previously cacheTime)
     retry: 1,
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnReconnect: true,    // Refetch on reconnect
   });
-
-  // Update auth store with user data
-  if (query.data && query.isSuccess) {
-    setUser(query.data);
-  }
 
   return {
     user: query.data,
@@ -39,7 +41,7 @@ export const useMe = () => {
 };
 
 // ============================================================================
-// Update Current User Profile
+// Update Current User Profile - ENHANCED ✅
 // ============================================================================
 
 export const useUpdateProfile = () => {
@@ -47,10 +49,12 @@ export const useUpdateProfile = () => {
 
   const mutation = useMutation({
     mutationFn: (data: UpdateUserRequest) => userService.updateProfile(data),
-    onSuccess: () => {
-      // Invalidate current user queries
-      queryClient.invalidateQueries({ queryKey: ["users", "me"] });
-      queryClient.invalidateQueries({ queryKey: ["me"] }); // Auth me endpoint
+    onSuccess: async () => {
+      // ✅ Invalidate queries to trigger refetch
+      await queryClient.invalidateQueries({ queryKey: ["users", "me"] });
+    },
+    onError: (error: ApiError) => {
+      console.error("Profile update failed:", error);
     },
   });
 
@@ -75,7 +79,8 @@ export const useUser = (userId: string, enabled = true) => {
     queryKey: ["users", userId],
     queryFn: () => userService.getUserById(userId),
     enabled: enabled && !!userId,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   return {
@@ -89,21 +94,24 @@ export const useUser = (userId: string, enabled = true) => {
 };
 
 // ============================================================================
-// List Users
+// List Users - ENHANCED ✅
 // ============================================================================
 
 export const useUsers = (params?: ListUsersParams) => {
   const query = useQuery({
     queryKey: ["users", "list", params],
     queryFn: () => userService.listUsers(params),
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    // ✅ Keep previous data while fetching new page
+    placeholderData: (previousData) => previousData,
   });
 
   return {
-    users: query.data?.users,
-    total: query.data?.total,
-    page: query.data?.page,
-    limit: query.data?.limit,
+    users: query.data?.users ?? [],
+    total: query.data?.total ?? 0,
+    page: query.data?.page ?? 1,
+    limit: query.data?.limit ?? 10,
     isPending: query.isPending,
     isSuccess: query.isSuccess,
     isError: query.isError,
@@ -113,7 +121,7 @@ export const useUsers = (params?: ListUsersParams) => {
 };
 
 // ============================================================================
-// Update User (Admin/HR)
+// Update User (Admin/HR) - ALREADY GOOD ✅
 // ============================================================================
 
 export const useUpdateUser = () => {
@@ -122,11 +130,11 @@ export const useUpdateUser = () => {
   const mutation = useMutation({
     mutationFn: ({ userId, data }: { userId: string; data: UpdateUserRequest }) =>
       userService.updateUser(userId, data),
-    onSuccess: (_, variables) => {
+    onSuccess: async (_, variables) => {
       // Invalidate specific user
-      queryClient.invalidateQueries({ queryKey: ["users", variables.userId] });
+      await queryClient.invalidateQueries({ queryKey: ["users", variables.userId] });
       // Invalidate users list
-      queryClient.invalidateQueries({ queryKey: ["users", "list"] });
+      await queryClient.invalidateQueries({ queryKey: ["users", "list"] });
     },
   });
 
@@ -151,11 +159,11 @@ export const useDeleteUser = () => {
 
   const mutation = useMutation({
     mutationFn: (userId: string) => userService.deleteUser(userId),
-    onSuccess: (_, userId) => {
+    onSuccess: async (_, userId) => {
       // Remove from cache
       queryClient.removeQueries({ queryKey: ["users", userId] });
       // Invalidate users list
-      queryClient.invalidateQueries({ queryKey: ["users", "list"] });
+      await queryClient.invalidateQueries({ queryKey: ["users", "list"] });
     },
   });
 

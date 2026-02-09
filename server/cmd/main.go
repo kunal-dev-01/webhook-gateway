@@ -27,7 +27,7 @@ func main() {
 		AppName:               "Upnixo Auth Server",
 		DisableStartupMessage: true,
 		ErrorHandler:          customErrorHandler,
-		Prefork:               false, // Set to true for production with multiple CPU cores
+		Prefork:               false, 
 		CaseSensitive:         true,
 		StrictRouting:         false,
 		ServerHeader:          "", // Hide server info

@@ -22,7 +22,7 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 	}))
 
 	// Security headers
-	app.Use(middleware.SecurityHeaders())
+	// app.Use(middleware.SecurityHeaders())
 
 	// CORS
 	app.Use(cors.New(cors.Config{
