@@ -15,7 +15,6 @@ import type {
   Disable2FARequest,
   ListSessionsResponse,
 } from "@/types/auth.types";
-import { type User } from "@/types/user.types";
 import { type MessageResponse } from "@/types/api.types";
 
 export const authService = {
@@ -85,11 +84,6 @@ export const authService = {
       "/auth/change-password",
       data,
     );
-    return response.data;
-  },
-
-  getMe: async (): Promise<User> => {
-    const response = await axiosClient.get<User>("/auth/me");
     return response.data;
   },
 

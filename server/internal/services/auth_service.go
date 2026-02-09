@@ -542,34 +542,6 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID uuid.UUID, req 
 }
 
 // ============================================================================
-// GET CURRENT USER
-// ============================================================================
-
-// GetCurrentUser returns current logged-in user info
-// GetMe returns current user info
-func (s *AuthService) GetMe(ctx context.Context, userID uuid.UUID) (*dto.MeResponse, error) {
-
-	user, err := s.userRepo.GetByID(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	return &dto.MeResponse{
-		ID:               user.ID,
-		Email:            user.Email,
-		FullName:         user.FullName,
-		Phone:            user.Phone,
-		Role:             user.Role,
-		Status:           user.Status,
-		EmailVerified:    user.EmailVerified,
-		TwoFactorEnabled: user.TwoFactorEnabled,
-		LastLoginAt:      user.LastLoginAt,
-		CreatedAt:        user.CreatedAt,
-		PasswordChangedAt: user.PasswordChangedAt,
-	}, nil
-}
-
-// ============================================================================
 // Token Refresh
 // ============================================================================
 

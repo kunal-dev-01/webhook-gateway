@@ -168,32 +168,6 @@ export const useChangePassword = () => {
   };
 };
 
-export const useMe = () => {
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const setUser = useAuthStore((state) => state.setUser);
-
-  const query = useQuery({
-    queryKey: ["me"],
-    queryFn: authService.getMe,
-    enabled: isAuthenticated,
-    staleTime: 5 * 60 * 1000,
-    retry: 1,
-  });
-
-  if (query.data && query.isSuccess) {
-    setUser(query.data);
-  }
-
-  return {
-    user: query.data,
-    isPending: query.isPending,
-    isSuccess: query.isSuccess,
-    isError: query.isError,
-    error: query.error as ApiError | null,
-    refetch: query.refetch,
-  };
-};
-
 export const useLogout = () => {
   const clearAuth = useAuthStore((state) => state.clearAuth);
   const queryClient = useQueryClient();

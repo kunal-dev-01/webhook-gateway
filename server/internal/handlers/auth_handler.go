@@ -324,32 +324,6 @@ func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 }
 
 // ============================================================================
-// Get Current User
-// ============================================================================
-
-// GetMe returns current logged-in user info
-// GET /auth/me
-func (h *AuthHandler) GetMe(c *fiber.Ctx) error {
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(dto.ErrorResponse{
-			Success: false,
-			Error:   "Unauthorized",
-		})
-	}
-
-	user, err := h.authService.GetMe(c.Context(), userID)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(dto.ErrorResponse{
-			Success: false,
-			Error:   err.Error(),
-		})
-	}
-
-	return c.JSON(user)
-}
-
-// ============================================================================
 // Token Refresh
 // ============================================================================
 

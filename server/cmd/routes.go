@@ -98,9 +98,6 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 
 	authProtected := auth.Group("", authMiddleware.RequireAuth())
 
-	// Get current user info
-	authProtected.Get("/me", deps.AuthHandler.GetMe)
-
 	// Password Management
 	authProtected.Patch("/change-password", deps.AuthHandler.ChangePassword)
 
