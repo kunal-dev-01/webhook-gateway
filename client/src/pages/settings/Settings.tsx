@@ -2,6 +2,7 @@ import { useAuthStore } from "@/store/auth.store"
 import { useMe } from "@/hooks/useUser";
 import PageLoader from "@/common/PageLoader";
 import { ProfileSidePanel } from "./ProfileSidePanel";
+import { SecuritySection } from "./SecuritySection";
 
 const Settings = () => {
 
@@ -37,12 +38,12 @@ const Settings = () => {
           {/* <CreditBalanceCard /> */}
         </div>
 
-        {/* <div className="lg:col-span-8 space-y-8">
+        <div className="lg:col-span-8 space-y-8">
           <SecuritySection />
 
-          <PreferencesSection />
-          <NotificationsSection />
-        </div> */}
+          {/* <PreferencesSection />
+          <NotificationsSection /> */}
+        </div>
 
       </div>
     </div>

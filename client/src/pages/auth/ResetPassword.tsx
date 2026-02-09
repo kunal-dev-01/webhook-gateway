@@ -57,7 +57,7 @@ const ResetPassword = () => {
   // Success handling with countdown
   useEffect(() => {
     if (isSuccess && countdown > 0) {
-      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      const timer = setTimeout(() => setCountdown(countdown - 1), 500);
       return () => clearTimeout(timer);
     }
 

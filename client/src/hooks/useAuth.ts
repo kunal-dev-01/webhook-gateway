@@ -254,14 +254,15 @@ export const useLogout = () => {
     mutationFn: authService.logout,
     onSuccess: () => {
       clearAuth();
-      // ✅ Clear all cached queries
       queryClient.clear();
+      window.location.replace("/auth/login");
     },
     onError: (error: ApiError) => {
       // ✅ Even on error, clear auth (cookie might be invalid)
       console.error("Logout failed:", error);
       clearAuth();
       queryClient.clear();
+      window.location.replace("/auth/login");
     },
   });
 
@@ -289,12 +290,14 @@ export const useLogoutAll = () => {
     onSuccess: () => {
       clearAuth();
       queryClient.clear();
+      window.location.replace("/auth/login");
     },
     onError: (error: ApiError) => {
       // ✅ Even on error, clear auth
       console.error("Logout all failed:", error);
       clearAuth();
       queryClient.clear();
+      window.location.replace("/auth/login");
     },
   });
 

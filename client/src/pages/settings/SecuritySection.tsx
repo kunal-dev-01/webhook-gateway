@@ -1,8 +1,20 @@
+import { ChangePasswordForm } from './ChangePasswordForm';
+import { TwoFactorAuth } from './TwoFactorAuth';
 
-const SecuritySection = () => {
+export const SecuritySection = () => {
   return (
-    <div>SecuritySection</div>
-  )
-}
+    <div className="space-y-8">
+      
+      {/* 2FA Section - High Priority */}
+      <section className="bg-white dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 rounded-4xl p-6">
+         <TwoFactorAuth />
+      </section>
 
-export default SecuritySection
+      {/* Password Change Section */}
+      <section className="bg-white dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 rounded-4xl p-6">
+        <ChangePasswordForm />
+      </section>
+
+    </div>
+  );
+};
