@@ -93,10 +93,7 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) er
 	}
 
 	// Send verification email
-	if err := s.sendVerificationEmail(ctx, user); err != nil {
-		fmt.Printf("User created but failed to send verification email: %v\n", err)
-		return nil
-	}
+	s.sendVerificationEmailAsync(user)
 
 	return nil
 }
@@ -107,7 +104,7 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) er
 
 // Login authenticates user and returns tokens
 func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, ip, userAgent string) (*dto.LoginResponse, error) {
-	// Check Redis rate limit for this IP (max 10 attempts per 15 minutes)
+	// ✅ Step 1: Check Redis rate limit for this IP (max 10 attempts per 15 minutes)
 	limited, err := s.tokenRepo.CheckLoginRateLimit(ctx, ip, 10, 15*time.Minute)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check rate limit: %w", err)
@@ -116,7 +113,7 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, ip, user
 		return nil, fmt.Errorf("too many login attempts from this IP, please try again later")
 	}
 
-	// Get user by email
+	// ✅ Step 2: Get user by email
 	user, err := s.userRepo.GetByEmail(ctx, req.Email)
 	if err != nil {
 		// Increment failed attempts in DB
@@ -124,7 +121,7 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, ip, user
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
-	// Check if user can login
+	// ✅ Step 3: Check if user can login
 	if !user.CanLogin() {
 		if user.IsLocked() {
 			return nil, fmt.Errorf("account is locked due to too many failed attempts")
@@ -141,16 +138,16 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, ip, user
 		return nil, fmt.Errorf("account cannot login")
 	}
 
-	// Verify password
+	// ✅ Step 4: Verify password
 	if !user.CheckPassword(req.Password) {
 		// Increment failed attempts in DB
 		s.userRepo.IncrementFailedAttempts(ctx, req.Email)
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
-	// Check if 2FA is enabled
+	// ✅ Step 5: Check if 2FA is enabled
 	if user.TwoFactorEnabled {
-		// Generate temporary token for 2FA verification
+		// Generate temporary token for 2FA verification (valid for 5 minutes)
 		tempToken, err := utils.GenerateRandomToken(32)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate temp token: %w", err)
@@ -161,62 +158,151 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, ip, user
 			return nil, fmt.Errorf("failed to store temp token: %w", err)
 		}
 
+		// Return temp token - user needs to verify 2FA code next
 		return &dto.LoginResponse{
 			Require2FA: true,
 			TempToken:  tempToken,
 		}, nil
 	}
 
-	// Complete login
+	// ✅ Step 6: Complete login (no 2FA required)
 	return s.completeLogin(ctx, user, ip, userAgent)
 }
 
-// Verify2FA verifies 2FA code and completes login
+// ============================================================================
+// Verify2FA - UPDATED WITH BETTER ERROR MESSAGES ✅
+// ============================================================================
+
+// Verify2FA verifies 2FA code (TOTP or recovery code) and completes login
+// Accepts:
+// - TOTP code (6 digits) from authenticator app
+// - Recovery/Backup code (8 characters) from saved backup codes
 func (s *AuthService) Verify2FA(ctx context.Context, req *dto.Verify2FARequest, ip, userAgent string) (*dto.LoginResponse, error) {
-	// Get user ID from temp token
+	// ✅ Step 1: Get user ID from temp token
 	userID, err := s.tokenRepo.Get2FATempToken(ctx, req.TempToken)
 	if err != nil {
-		return nil, fmt.Errorf("invalid or expired 2FA token")
+		return nil, fmt.Errorf("invalid or expired 2FA session - please login again")
 	}
 
-	// Get user
+	// ✅ Step 2: Check 2FA rate limit (max 5 attempts per 5 minutes to prevent brute force)
+	limitCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+
+	limited, err := s.tokenRepo.Check2FARateLimit(limitCtx, userID, 5, 5*time.Minute)
+	if err != nil {
+		fmt.Printf("Rate limit check failed: %v\n", err)
+	} else if limited {
+		return nil, fmt.Errorf("too many 2FA verification attempts - please wait 5 minutes and try again")
+	}
+
+	// ✅ Step 3: Get user from database
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("user not found")
 	}
 
-	// Verify TOTP code
-	if user.TwoFactorSecret == nil {
-		return nil, fmt.Errorf("2FA not enabled for this user")
+	// ✅ Step 4: Verify 2FA is enabled
+	if !user.TwoFactorEnabled || user.TwoFactorSecret == nil {
+		return nil, fmt.Errorf("2FA is not enabled for this account")
 	}
 
-	// Decrypt TOTP secret
+	// ✅ Step 5: Decrypt TOTP secret from database
 	secret, err := utils.Decrypt(*user.TwoFactorSecret, s.totpManager.GetAESKey())
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt TOTP secret: %w", err)
 	}
 
-	// Validate code
-	if !s.totpManager.ValidateCode(secret, req.Code) {
-		return nil, fmt.Errorf("invalid 2FA code")
+	// ============================================================================
+	// ✅ STRATEGY 1: Try TOTP Code First (6 digits from authenticator app)
+	// ============================================================================
+	if len(req.Code) == 6 {
+		if s.totpManager.ValidateCode(secret, req.Code) {
+			// ✅ SUCCESS: TOTP code is valid
+			fmt.Printf("✅ 2FA: User %s authenticated with TOTP code\n", user.Email)
+
+			// Reset rate limit counter
+			s.tokenRepo.Reset2FARateLimit(ctx, userID)
+
+			// Delete temp token (no longer needed)
+			s.tokenRepo.Delete2FATempToken(ctx, req.TempToken)
+
+			// Complete login
+			return s.completeLogin(ctx, user, ip, userAgent)
+		}
 	}
 
-	// Delete temp token
-	s.tokenRepo.Delete2FATempToken(ctx, req.TempToken)
+	// ============================================================================
+	// ✅ STRATEGY 2: Try Recovery/Backup Code (8 characters)
+	// ============================================================================
+	if len(user.TwoFactorRecoveryCodes) > 0 {
+		valid, codeIndex := s.totpManager.ValidateRecoveryCode(req.Code, user.TwoFactorRecoveryCodes)
 
-	// Complete login
-	return s.completeLogin(ctx, user, ip, userAgent)
+		if valid {
+			// ✅ Check if code already used (prevent reuse attacks)
+			used, err := s.tokenRepo.IsRecoveryCodeUsed(ctx, userID, codeIndex)
+			if err == nil && used {
+				return nil, fmt.Errorf("this recovery code has already been used - please use a different code")
+			}
+
+			// ✅ SUCCESS: Recovery code is valid
+			fmt.Printf("✅ 2FA: User %s authenticated with recovery code (index %d)\n", user.Email, codeIndex)
+
+			// Mark code as used in Redis (prevent reuse for 30 days)
+			s.tokenRepo.MarkRecoveryCodeUsed(ctx, userID, codeIndex, 30*24*time.Hour)
+
+			// Reset rate limit counter
+			s.tokenRepo.Reset2FARateLimit(ctx, userID)
+
+			// Delete temp token (no longer needed)
+			s.tokenRepo.Delete2FATempToken(ctx, req.TempToken)
+
+			// ✅ PERMANENTLY DELETE used recovery code from database
+			// Copy all codes except the used one
+			newRecoveryCodes := make([]string, 0, len(user.TwoFactorRecoveryCodes)-1)
+			for i, code := range user.TwoFactorRecoveryCodes {
+				if i != codeIndex {
+					newRecoveryCodes = append(newRecoveryCodes, code)
+				}
+			}
+			user.TwoFactorRecoveryCodes = newRecoveryCodes
+
+			// Update user in database (removes used code permanently)
+			if err := s.userRepo.Update(ctx, user); err != nil {
+				// Log error but don't fail login
+				fmt.Printf("⚠️ Warning: Failed to remove used recovery code: %v\n", err)
+			}
+
+			// Complete login
+			return s.completeLogin(ctx, user, ip, userAgent)
+		}
+	}
+
+	// ============================================================================
+	// ❌ BOTH STRATEGIES FAILED
+	// ============================================================================
+	// Provide helpful error message based on code length
+	if len(req.Code) == 6 {
+		return nil, fmt.Errorf("invalid TOTP code - please check your authenticator app and try again")
+	} else if len(req.Code) == 8 {
+		return nil, fmt.Errorf("invalid recovery code - please check your saved backup codes")
+	}
+	
+	return nil, fmt.Errorf("invalid 2FA code - please enter a 6-digit TOTP code or 8-character recovery code")
 }
+
+// ============================================================================
+// Complete Login Helper
+// ============================================================================
 
 // completeLogin generates tokens and creates session
 func (s *AuthService) completeLogin(ctx context.Context, user *models.User, ip, userAgent string) (*dto.LoginResponse, error) {
-	// Generate JWT tokens
+	// ✅ Step 1: Generate JWT tokens (access + refresh)
 	tokenPair, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, string(user.Role))
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate tokens: %w", err)
 	}
 
-	// Create session
+	// ✅ Step 2: Create session in Redis
 	if err := s.sessionMgr.CreateSession(
 		ctx,
 		user.ID,
@@ -230,15 +316,16 @@ func (s *AuthService) completeLogin(ctx context.Context, user *models.User, ip, 
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
-	// Update last login
+	// ✅ Step 3: Update last login timestamp in database
 	if err := s.userRepo.UpdateLastLogin(ctx, user.ID, ip); err != nil {
 		// Log error but don't fail login
-		fmt.Printf("Failed to update last login: %v\n", err)
+		fmt.Printf("⚠️ Warning: Failed to update last login: %v\n", err)
 	}
 
+	// ✅ Step 4: Return successful login response
 	return &dto.LoginResponse{
 		AccessToken:  tokenPair.AccessToken,
-		RefreshToken: tokenPair.RefreshToken, // For cookie
+		RefreshToken: tokenPair.RefreshToken, // For HTTP-only cookie
 		ExpiresIn:    tokenPair.ExpiresIn,
 		TokenType:    "Bearer",
 		User:         user.ToPublic(),
@@ -291,31 +378,35 @@ func (s *AuthService) ResendVerification(ctx context.Context, email string) erro
 		return fmt.Errorf("too many verification emails sent, please try again later")
 	}
 
+	s.sendVerificationEmailAsync(user)
+
 	// Send verification email
-	return s.sendVerificationEmail(ctx, user)
+	return nil
 }
 
 // sendVerificationEmail sends verification email
-func (s *AuthService) sendVerificationEmail(ctx context.Context, user *models.User) error {
-	// Generate token
-	token, err := utils.GenerateRandomToken(32)
-	if err != nil {
-		return fmt.Errorf("failed to generate token: %w", err)
-	}
-
-	// Store token in Redis (24 hours)
-	if err := s.tokenRepo.StoreVerificationToken(ctx, user.ID, token, 24*time.Hour); err != nil {
-		return fmt.Errorf("failed to store token: %w", err)
-	}
-
-	// Send email
-	return s.emailService.SendVerificationEmail(
-		ctx,
-		user.Email,
-		token,
-		s.config.Frontend.VerificationUrl,
-		user.FullName,
-	)
+func (s *AuthService) sendVerificationEmailAsync(user *models.User) {
+    go func() {
+        ctx := context.Background()
+        token, err := utils.GenerateRandomToken(32)
+        if err != nil {
+            fmt.Printf("Failed to generate token: %v\n", err)
+            return
+        }
+        
+        if err := s.tokenRepo.StoreVerificationToken(ctx, user.ID, token, 24*time.Hour); err != nil {
+            fmt.Printf("Failed to store token: %v\n", err)
+            return
+        }
+        
+        s.emailService.SendVerificationEmail(
+            ctx,
+            user.Email,
+            token,
+            s.config.Frontend.VerificationUrl,
+            user.FullName,
+        )
+    }()
 }
 
 // ============================================================================
@@ -324,20 +415,24 @@ func (s *AuthService) sendVerificationEmail(ctx context.Context, user *models.Us
 
 // ForgotPassword sends password reset email
 func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
+	// ✅ OPTIMIZED: Check rate limit FIRST (before DB query)
+	limitCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	
+	limited, err := s.tokenRepo.CheckEmailRateLimit(limitCtx, email, 3, time.Hour)
+	if err != nil {
+		// Log but don't reveal
+		fmt.Printf("Rate limit check failed: %v\n", err)
+	} else if limited {
+		// Don't reveal rate limit - silent fail
+		return nil
+	}
+
 	// Get user
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	if err != nil {
 		// Don't reveal if user exists
 		return nil
-	}
-
-	// Check rate limit (max 3 per hour)
-	limited, err := s.tokenRepo.CheckEmailRateLimit(ctx, email, 3, time.Hour)
-	if err != nil {
-		return fmt.Errorf("failed to check rate limit: %w", err)
-	}
-	if limited {
-		return nil // Don't reveal rate limit
 	}
 
 	// Generate token
@@ -351,14 +446,21 @@ func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
 		return fmt.Errorf("failed to store token: %w", err)
 	}
 
-	// Send email
-	return s.emailService.SendPasswordResetEmail(
-		ctx,
-		user.Email,
-		token,
-		s.config.Frontend.ResetUrl,
-		user.FullName,
-	)
+	// ✅ OPTIMIZED: Send email asynchronously (non-blocking)
+	go func() {
+		bgCtx := context.Background()
+		if err := s.emailService.SendPasswordResetEmail(
+			bgCtx,
+			user.Email,
+			token,
+			s.config.Frontend.ResetUrl,
+			user.FullName,
+		); err != nil {
+			fmt.Printf("Failed to send password reset email: %v\n", err)
+		}
+	}()
+
+	return nil
 }
 
 // ResetPassword resets password with token

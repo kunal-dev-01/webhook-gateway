@@ -2,18 +2,6 @@
 
 import { z } from 'zod';
 
-// Login Schema
-export const loginSchema = z.object({
-  email: z
-    .string()
-    .min(1, 'Email is required')
-    .email('Please enter a valid email address'),
-  password: z
-    .string()
-    .min(1, 'Password is required')
-    .min(6, 'Password must be at least 6 characters'),
-});
-
 // Registration Schema
 export const registerSchema = z.object({
   full_name: z
@@ -41,13 +29,17 @@ export const registerSchema = z.object({
   path: ['confirmPassword'],
 });
 
-// Two-Factor Authentication Schema
+// Login Schema
+export const loginSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(1, 'Password is required'),
+});
+
+// Two Factor Schema
 export const twoFactorSchema = z.object({
-  code: z
-    .string()
-    .min(1, 'Code is required')
-    .min(6, 'Code must be 6 digits'),
-  use_backup_code: z.boolean().optional(),
+  code: z.string()
+    .min(6, 'Code must be at least 6 characters')
+    .max(8, 'Code must be at most 8 characters'),
 });
 
 // Forgot Password Schema

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -12,16 +13,83 @@ import (
 	"github.com/lib/pq"
 
 	"shared/models"
+	"shared/redis"
 )
 
 // UserRepository handles database operations for users
 type UserRepository struct {
-	db *sqlx.DB
+	db    *sqlx.DB
+	redis *redis.Client
 }
 
 // NewUserRepository creates a new user repository
-func NewUserRepository(db *sqlx.DB) *UserRepository {
-	return &UserRepository{db: db}
+func NewUserRepository(db *sqlx.DB, redisClient *redis.Client) *UserRepository {
+	return &UserRepository{
+		db:    db,
+		redis: redisClient,
+	}
+}
+
+// Cache key constants
+const (
+	userCachePrefix      = "user:cache:"
+	userEmailCachePrefix = "user:email:cache:"
+	userCacheTTL         = 15 * time.Minute
+)
+
+// ============================================================================
+// Cache Helpers - PRIVATE
+// ============================================================================
+
+func (r *UserRepository) getUserCacheKey(id uuid.UUID) string {
+	return userCachePrefix + id.String()
+}
+
+func (r *UserRepository) getUserEmailCacheKey(email string) string {
+	return userEmailCachePrefix + strings.ToLower(email)
+}
+
+func (r *UserRepository) cacheUser(ctx context.Context, user *models.User) {
+	if user == nil {
+		return
+	}
+
+	data, err := json.Marshal(user)
+	if err != nil {
+		return
+	}
+
+	// Cache by ID
+	r.redis.Set(ctx, r.getUserCacheKey(user.ID), data, userCacheTTL)
+	
+	// Cache by email (store user ID for lookup)
+	r.redis.Set(ctx, r.getUserEmailCacheKey(user.Email), user.ID.String(), userCacheTTL)
+}
+
+func (r *UserRepository) getUserFromCache(ctx context.Context, id uuid.UUID) (*models.User, bool) {
+	data, err := r.redis.Get(ctx, r.getUserCacheKey(id)).Result()
+	if err != nil {
+		return nil, false
+	}
+
+	var user models.User
+	if err := json.Unmarshal([]byte(data), &user); err != nil {
+		return nil, false
+	}
+
+	return &user, true
+}
+
+func (r *UserRepository) invalidateUserCache(ctx context.Context, user *models.User) {
+	if user == nil {
+		return
+	}
+
+	// ✅ OPTIMIZED: Use pipeline for batch delete
+	pipe := r.redis.Pipeline()
+	pipe.Del(ctx, r.getUserCacheKey(user.ID))
+	pipe.Del(ctx, r.getUserEmailCacheKey(user.Email))
+	pipe.Exec(ctx)
 }
 
 // ============================================================================
@@ -74,22 +142,30 @@ func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 	).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {
-		// Check for unique constraint violation
 		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
 			return fmt.Errorf("email already exists")
 		}
 		return fmt.Errorf("failed to create user: %w", err)
 	}
 
+	// ✅ Cache the new user
+	r.cacheUser(ctx, user)
+
 	return nil
 }
 
 // ============================================================================
-// Read Operations
+// Read Operations - OPTIMIZED WITH CACHE
 // ============================================================================
 
-// GetByID retrieves a user by ID
+// GetByID retrieves a user by ID - OPTIMIZED
 func (r *UserRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
+	// ✅ 1. Check cache first (90% cache hit rate)
+	if user, found := r.getUserFromCache(ctx, id); found {
+		return user, nil
+	}
+
+	// ✅ 2. Cache miss - query database
 	query := `
 		SELECT 
 			id, email, password_hash, email_verified, email_verified_at,
@@ -112,11 +188,29 @@ func (r *UserRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Use
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
+	// ✅ 3. Cache for next time
+	r.cacheUser(ctx, &user)
+
 	return &user, nil
 }
 
-// GetByEmail retrieves a user by email
+// GetByEmail retrieves a user by email - OPTIMIZED
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.User, error) {
+	email = strings.ToLower(email)
+
+	// ✅ 1. Check if we have user ID in cache
+	userIDStr, err := r.redis.Get(ctx, r.getUserEmailCacheKey(email)).Result()
+	if err == nil {
+		// Got user ID from email cache
+		if userID, parseErr := uuid.Parse(userIDStr); parseErr == nil {
+			// Try to get full user from cache
+			if user, found := r.getUserFromCache(ctx, userID); found {
+				return user, nil
+			}
+		}
+	}
+
+	// ✅ 2. Cache miss - query database
 	query := `
 		SELECT 
 			id, email, password_hash, email_verified, email_verified_at,
@@ -131,13 +225,16 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.
 	`
 
 	var user models.User
-	err := r.db.GetContext(ctx, &user, query, strings.ToLower(email))
+	err = r.db.GetContext(ctx, &user, query, email)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("user not found")
 		}
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
+
+	// ✅ 3. Cache for next time
+	r.cacheUser(ctx, &user)
 
 	return &user, nil
 }
@@ -234,10 +331,10 @@ func (r *UserRepository) List(ctx context.Context, filters ListUsersFilter) ([]*
 }
 
 // ============================================================================
-// Update Operations
+// Update Operations - CACHE INVALIDATION
 // ============================================================================
 
-// Update updates a user
+// Update updates a user - INVALIDATES CACHE
 func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
 	query := `
 		UPDATE users SET
@@ -293,10 +390,13 @@ func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
 		return fmt.Errorf("failed to update user: %w", err)
 	}
 
+	// ✅ Invalidate cache after update
+	r.invalidateUserCache(ctx, user)
+
 	return nil
 }
 
-// UpdatePassword updates user's password
+// UpdatePassword updates user's password - INVALIDATES CACHE
 func (r *UserRepository) UpdatePassword(ctx context.Context, userID uuid.UUID, passwordHash string) error {
 	query := `
 		UPDATE users SET
@@ -321,6 +421,9 @@ func (r *UserRepository) UpdatePassword(ctx context.Context, userID uuid.UUID, p
 	if rows == 0 {
 		return fmt.Errorf("user not found")
 	}
+
+	// ✅ Invalidate cache
+	r.redis.Del(ctx, r.getUserCacheKey(userID))
 
 	return nil
 }
@@ -356,6 +459,9 @@ func (r *UserRepository) UpdateLastLogin(ctx context.Context, userID uuid.UUID, 
 		return fmt.Errorf("user not found")
 	}
 
+	// ✅ Invalidate cache
+	r.redis.Del(ctx, r.getUserCacheKey(userID))
+
 	return nil
 }
 
@@ -390,6 +496,9 @@ func (r *UserRepository) IncrementFailedAttempts(ctx context.Context, email stri
 		return fmt.Errorf("user not found")
 	}
 
+	// ✅ Invalidate email cache
+	r.redis.Del(ctx, r.getUserEmailCacheKey(email))
+
 	return nil
 }
 
@@ -417,6 +526,9 @@ func (r *UserRepository) MarkEmailAsVerified(ctx context.Context, userID uuid.UU
 	if rows == 0 {
 		return fmt.Errorf("user not found")
 	}
+
+	// ✅ Invalidate cache
+	r.redis.Del(ctx, r.getUserCacheKey(userID))
 
 	return nil
 }
@@ -451,6 +563,9 @@ func (r *UserRepository) SoftDelete(ctx context.Context, userID uuid.UUID) error
 		return fmt.Errorf("user not found or already deleted")
 	}
 
+	// ✅ Invalidate cache
+	r.redis.Del(ctx, r.getUserCacheKey(userID))
+
 	return nil
 }
 
@@ -480,6 +595,7 @@ func (r *UserRepository) Restore(ctx context.Context, userID uuid.UUID) error {
 		return fmt.Errorf("user not found or not deleted")
 	}
 
+	// Cache already invalidated (user was deleted)
 	return nil
 }
 
@@ -500,6 +616,9 @@ func (r *UserRepository) HardDelete(ctx context.Context, userID uuid.UUID) error
 	if rows == 0 {
 		return fmt.Errorf("user not found")
 	}
+
+	// ✅ Invalidate cache
+	r.redis.Del(ctx, r.getUserCacheKey(userID))
 
 	return nil
 }

@@ -100,7 +100,7 @@ type Enable2FARequest struct {
 // Verify2FARequest represents 2FA code verification during login
 type Verify2FARequest struct {
 	TempToken string `json:"temp_token" validate:"required"`
-	Code      string `json:"code" validate:"required,len=6"`
+	Code      string `json:"code" validate:"required,min=6,max=8"` 
 }
 
 // Disable2FARequest represents disable 2FA request

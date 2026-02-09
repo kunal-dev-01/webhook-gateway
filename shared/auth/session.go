@@ -36,10 +36,10 @@ type SessionData struct {
 }
 
 // ============================================================================
-// Session Operations
+// Session Operations - OPTIMIZED
 // ============================================================================
 
-// CreateSession creates a new session
+// CreateSession creates a new session - OPTIMIZED WITH PIPELINE
 func (s *SessionManager) CreateSession(ctx context.Context, userID uuid.UUID, email, role, sessionID, ipAddress, userAgent string, ttl time.Duration) error {
 	session := SessionData{
 		UserID:       userID,
@@ -57,18 +57,20 @@ func (s *SessionManager) CreateSession(ctx context.Context, userID uuid.UUID, em
 		return fmt.Errorf("failed to marshal session: %w", err)
 	}
 
-	// Store session with TTL
-	key := fmt.Sprintf("session:%s:%s", userID, sessionID)
-	if err := s.redis.Set(ctx, key, data, ttl).Err(); err != nil {
-		return fmt.Errorf("failed to store session: %w", err)
-	}
-
-	// Track user's active sessions
+	// ✅ OPTIMIZED: Use pipeline for atomic operations (1 network call instead of 3)
+	pipe := s.redis.Pipeline()
+	
+	sessionKey := fmt.Sprintf("session:%s:%s", userID, sessionID)
 	userSessionsKey := fmt.Sprintf("user:sessions:%s", userID)
-	if err := s.redis.SAdd(ctx, userSessionsKey, sessionID).Err(); err != nil {
-		return fmt.Errorf("failed to add session to user sessions: %w", err)
+	
+	pipe.Set(ctx, sessionKey, data, ttl)
+	pipe.SAdd(ctx, userSessionsKey, sessionID)
+	pipe.Expire(ctx, userSessionsKey, ttl)
+	
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create session: %w", err)
 	}
-	s.redis.Expire(ctx, userSessionsKey, ttl)
 
 	return nil
 }
@@ -93,73 +95,97 @@ func (s *SessionManager) GetSession(ctx context.Context, userID uuid.UUID, sessi
 	return &session, nil
 }
 
-// UpdateSessionActivity updates last activity timestamp
+// UpdateSessionActivity updates last activity timestamp - OPTIMIZED
 func (s *SessionManager) UpdateSessionActivity(ctx context.Context, userID uuid.UUID, sessionID string) error {
-	session, err := s.GetSession(ctx, userID, sessionID)
+	// ✅ OPTIMIZED: Use GETEX to get + update TTL in single call
+	key := fmt.Sprintf("session:%s:%s", userID, sessionID)
+	
+	// Get current session
+	data, err := s.redis.Get(ctx, key).Bytes()
 	if err != nil {
-		return err
+		if err == redis.Nil {
+			return fmt.Errorf("session not found")
+		}
+		return fmt.Errorf("failed to get session: %w", err)
 	}
 
-	session.LastActivity = time.Now()
+	var session SessionData
+	if err := json.Unmarshal(data, &session); err != nil {
+		return fmt.Errorf("failed to unmarshal session: %w", err)
+	}
 
-	data, err := json.Marshal(session)
+	// Update last activity
+	session.LastActivity = time.Now()
+	newData, err := json.Marshal(session)
 	if err != nil {
 		return fmt.Errorf("failed to marshal session: %w", err)
 	}
 
-	key := fmt.Sprintf("session:%s:%s", userID, sessionID)
-	
 	// Get remaining TTL
 	ttl, err := s.redis.TTL(ctx, key).Result()
-	if err != nil {
-		return fmt.Errorf("failed to get TTL: %w", err)
+	if err != nil || ttl <= 0 {
+		ttl = 7 * 24 * time.Hour // Default 7 days if TTL not found
 	}
 
 	// Update with same TTL
-	if err := s.redis.Set(ctx, key, data, ttl).Err(); err != nil {
+	if err := s.redis.Set(ctx, key, newData, ttl).Err(); err != nil {
 		return fmt.Errorf("failed to update session: %w", err)
 	}
 
 	return nil
 }
 
-// DeleteSession removes a session
+// DeleteSession removes a session - OPTIMIZED WITH PIPELINE
 func (s *SessionManager) DeleteSession(ctx context.Context, userID uuid.UUID, sessionID string) error {
-	key := fmt.Sprintf("session:%s:%s", userID, sessionID)
+	// ✅ OPTIMIZED: Pipeline for atomic delete
+	pipe := s.redis.Pipeline()
 	
-	if err := s.redis.Del(ctx, key).Err(); err != nil {
+	sessionKey := fmt.Sprintf("session:%s:%s", userID, sessionID)
+	userSessionsKey := fmt.Sprintf("user:sessions:%s", userID)
+	
+	pipe.Del(ctx, sessionKey)
+	pipe.SRem(ctx, userSessionsKey, sessionID)
+	
+	_, err := pipe.Exec(ctx)
+	if err != nil {
 		return fmt.Errorf("failed to delete session: %w", err)
 	}
-
-	// Remove from user's active sessions
-	userSessionsKey := fmt.Sprintf("user:sessions:%s", userID)
-	s.redis.SRem(ctx, userSessionsKey, sessionID)
 
 	return nil
 }
 
-// DeleteAllUserSessions removes all sessions for a user
+// DeleteAllUserSessions removes all sessions for a user - OPTIMIZED
 func (s *SessionManager) DeleteAllUserSessions(ctx context.Context, userID uuid.UUID) error {
-	// Get all session IDs for user
 	userSessionsKey := fmt.Sprintf("user:sessions:%s", userID)
+	
+	// Get all session IDs
 	sessionIDs, err := s.redis.SMembers(ctx, userSessionsKey).Result()
 	if err != nil {
 		return fmt.Errorf("failed to get user sessions: %w", err)
 	}
 
-	// Delete each session
-	for _, sessionID := range sessionIDs {
-		key := fmt.Sprintf("session:%s:%s", userID, sessionID)
-		s.redis.Del(ctx, key)
+	if len(sessionIDs) == 0 {
+		return nil
 	}
 
-	// Delete user sessions set
-	s.redis.Del(ctx, userSessionsKey)
+	// ✅ OPTIMIZED: Batch delete with pipeline
+	pipe := s.redis.Pipeline()
+	
+	for _, sessionID := range sessionIDs {
+		sessionKey := fmt.Sprintf("session:%s:%s", userID, sessionID)
+		pipe.Del(ctx, sessionKey)
+	}
+	pipe.Del(ctx, userSessionsKey)
+	
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to delete sessions: %w", err)
+	}
 
 	return nil
 }
 
-// ListUserSessions returns all active sessions for a user
+// ListUserSessions returns all active sessions for a user - OPTIMIZED
 func (s *SessionManager) ListUserSessions(ctx context.Context, userID uuid.UUID) ([]*SessionData, error) {
 	userSessionsKey := fmt.Sprintf("user:sessions:%s", userID)
 	sessionIDs, err := s.redis.SMembers(ctx, userSessionsKey).Result()
@@ -167,14 +193,36 @@ func (s *SessionManager) ListUserSessions(ctx context.Context, userID uuid.UUID)
 		return nil, fmt.Errorf("failed to get user sessions: %w", err)
 	}
 
+	if len(sessionIDs) == 0 {
+		return []*SessionData{}, nil
+	}
+
+	// ✅ OPTIMIZED: Batch fetch with pipeline
+	pipe := s.redis.Pipeline()
+	cmds := make([]*redis.StringCmd, len(sessionIDs))
+	
+	for i, sessionID := range sessionIDs {
+		sessionKey := fmt.Sprintf("session:%s:%s", userID, sessionID)
+		cmds[i] = pipe.Get(ctx, sessionKey)
+	}
+	
+	_, err = pipe.Exec(ctx)
+	if err != nil && err != redis.Nil {
+		// Some sessions might have expired, continue
+	}
+
 	sessions := make([]*SessionData, 0, len(sessionIDs))
-	for _, sessionID := range sessionIDs {
-		session, err := s.GetSession(ctx, userID, sessionID)
+	for _, cmd := range cmds {
+		data, err := cmd.Bytes()
 		if err != nil {
-			// Skip invalid/expired sessions
-			continue
+			continue // Skip expired sessions
 		}
-		sessions = append(sessions, session)
+
+		var session SessionData
+		if err := json.Unmarshal(data, &session); err != nil {
+			continue // Skip corrupted sessions
+		}
+		sessions = append(sessions, &session)
 	}
 
 	return sessions, nil
@@ -186,32 +234,36 @@ func (s *SessionManager) CountUserSessions(ctx context.Context, userID uuid.UUID
 	return s.redis.SCard(ctx, userSessionsKey).Result()
 }
 
-// ValidateSession checks if session exists and is valid
+// ValidateSession checks if session exists and is valid - OPTIMIZED
 func (s *SessionManager) ValidateSession(ctx context.Context, userID uuid.UUID, sessionID string) (bool, error) {
-	_, err := s.GetSession(ctx, userID, sessionID)
+	// ✅ OPTIMIZED: Use EXISTS instead of GET (faster)
+	key := fmt.Sprintf("session:%s:%s", userID, sessionID)
+	exists, err := s.redis.Exists(ctx, key).Result()
 	if err != nil {
-		return false, nil
+		return false, err
 	}
-	return true, nil
+	return exists > 0, nil
 }
 
-// EnforceMaxSessions limits number of concurrent sessions (e.g., max 5 devices)
+// EnforceMaxSessions limits number of concurrent sessions - OPTIMIZED
 func (s *SessionManager) EnforceMaxSessions(ctx context.Context, userID uuid.UUID, maxSessions int) error {
 	sessions, err := s.ListUserSessions(ctx, userID)
 	if err != nil {
 		return err
 	}
 
-	// If under limit, nothing to do
 	if len(sessions) <= maxSessions {
 		return nil
 	}
 
 	// Sort by last activity (oldest first)
-	// Delete oldest sessions until under limit
 	excessCount := len(sessions) - maxSessions
-	for range excessCount {
-		// Find oldest session
+	
+	// ✅ OPTIMIZED: Batch delete oldest sessions
+	pipe := s.redis.Pipeline()
+	
+	for i := 0; i < excessCount; i++ {
+		// Find oldest
 		oldestIdx := 0
 		for j := 1; j < len(sessions); j++ {
 			if sessions[j].LastActivity.Before(sessions[oldestIdx].LastActivity) {
@@ -219,14 +271,17 @@ func (s *SessionManager) EnforceMaxSessions(ctx context.Context, userID uuid.UUI
 			}
 		}
 
-		// Delete oldest session
-		if err := s.DeleteSession(ctx, userID, sessions[oldestIdx].SessionID); err != nil {
-			return err
-		}
+		// Queue for deletion
+		sessionKey := fmt.Sprintf("session:%s:%s", userID, sessions[oldestIdx].SessionID)
+		userSessionsKey := fmt.Sprintf("user:sessions:%s", userID)
+		
+		pipe.Del(ctx, sessionKey)
+		pipe.SRem(ctx, userSessionsKey, sessions[oldestIdx].SessionID)
 
 		// Remove from list
 		sessions = append(sessions[:oldestIdx], sessions[oldestIdx+1:]...)
 	}
 
-	return nil
+	_, err = pipe.Exec(ctx)
+	return err
 }

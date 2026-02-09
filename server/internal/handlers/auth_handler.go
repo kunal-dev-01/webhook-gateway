@@ -61,14 +61,13 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 }
 
 // ============================================================================
-// Login
+// Login Handler
 // ============================================================================
 
-// Login handles user login
-// POST /auth/login
 func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	var req dto.LoginRequest
 	
+	// Parse request body
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(dto.ErrorResponse{
 			Success: false,
@@ -76,6 +75,7 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		})
 	}
 
+	// Validate request
 	if err := h.validate.Struct(req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(dto.ErrorResponse{
 			Success: false,
@@ -83,10 +83,11 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		})
 	}
 
-	// Get IP and user agent
+	// Get IP and user agent for security logging
 	ip := c.IP()
 	userAgent := c.Get("User-Agent")
 
+	// Attempt login
 	result, err := h.authService.Login(c.Context(), &req, ip, userAgent)
 	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(dto.ErrorResponse{
@@ -95,22 +96,26 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		})
 	}
 
-	// If 2FA is required, return temp token (no cookies)
+	// ✅ If 2FA is required, return temp token (no cookies set yet)
 	if result.Require2FA {
 		return c.JSON(result)
 	}
 
-	// Set refresh token in HTTP-only cookie
+	// ✅ If login successful (no 2FA), set refresh token in HTTP-only cookie
 	h.setRefreshTokenCookie(c, result.RefreshToken)
 
 	return c.JSON(result)
 }
 
-// Verify2FA handles 2FA code verification during login
-// POST /auth/verify-2fa
+// ============================================================================
+// Verify 2FA Handler - UPDATED ✅
+// ============================================================================
+
+// ✅ Important: Used recovery codes are automatically deleted from database
 func (h *AuthHandler) Verify2FA(c *fiber.Ctx) error {
 	var req dto.Verify2FARequest
 	
+	// Parse request body
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(dto.ErrorResponse{
 			Success: false,
@@ -118,6 +123,7 @@ func (h *AuthHandler) Verify2FA(c *fiber.Ctx) error {
 		})
 	}
 
+	// Validate request
 	if err := h.validate.Struct(req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(dto.ErrorResponse{
 			Success: false,
@@ -125,10 +131,11 @@ func (h *AuthHandler) Verify2FA(c *fiber.Ctx) error {
 		})
 	}
 
-	// Get IP and user agent
+	// Get IP and user agent for security logging
 	ip := c.IP()
 	userAgent := c.Get("User-Agent")
 
+	// Verify 2FA code (TOTP or recovery code)
 	result, err := h.authService.Verify2FA(c.Context(), &req, ip, userAgent)
 	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(dto.ErrorResponse{
@@ -137,7 +144,7 @@ func (h *AuthHandler) Verify2FA(c *fiber.Ctx) error {
 		})
 	}
 
-	// Set refresh token in HTTP-only cookie
+	// ✅ Set refresh token in HTTP-only cookie
 	h.setRefreshTokenCookie(c, result.RefreshToken)
 
 	return c.JSON(result)

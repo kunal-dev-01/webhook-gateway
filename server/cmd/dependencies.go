@@ -97,7 +97,7 @@ func InitDependencies() (*Dependencies, error) {
 	logger.Info().Msg("✅ Email Service initialized")
 
 	// Initialize Repositories
-	userRepo := repository.NewUserRepository(sqlxDB)
+	userRepo := repository.NewUserRepository(sqlxDB, redis)
 	tokenRepo := repository.NewTokenRepository(redis)
 	logger.Info().Msg("✅ Repositories initialized")
 
