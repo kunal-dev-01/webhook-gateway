@@ -6,7 +6,7 @@ import axios, {
 import { useAuthStore } from "@/store/auth.store";
 import { ApiError, type ApiErrorResponse } from "@/types/api.types";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api/v1";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL!;
 
 class AxiosClient {
   private instance: AxiosInstance;

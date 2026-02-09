@@ -207,7 +207,7 @@ const Register = () => {
         <AuthInput
           label="Full Name"
           type="text"
-          name="name"
+          name="full_name"
           placeholder="Enter your full name"
           register={register}
           error={errors.full_name?.message}
