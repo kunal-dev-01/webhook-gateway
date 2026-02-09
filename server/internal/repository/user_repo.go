@@ -243,7 +243,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.
 func (r *UserRepository) List(ctx context.Context, filters ListUsersFilter) ([]*models.User, int, error) {
 	// Build WHERE clause
 	whereClauses := []string{"deleted_at IS NULL"}
-	args := []interface{}{}
+	args := []any{}
 	argCounter := 1
 
 	if filters.Status != nil {
@@ -298,10 +298,7 @@ func (r *UserRepository) List(ctx context.Context, filters ListUsersFilter) ([]*
 	if limit <= 0 {
 		limit = 10
 	}
-	offset := filters.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(filters.Offset, 0)
 
 	// Query users
 	query := fmt.Sprintf(`
