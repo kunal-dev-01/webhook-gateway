@@ -117,6 +117,23 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 	authProtected.Get("/sessions", deps.AuthHandler.ListSessions)
 	authProtected.Delete("/sessions/:sessionId", deps.AuthHandler.DeleteSession)
 
+
+    // ========================================================================
+	// User Management Routes (Protected)
+	// ========================================================================
+
+	users := api.Group("/users", authMiddleware.RequireAuth())
+
+	// Current user operations
+	users.Get("/me", deps.UserHandler.GetMe)
+	users.Patch("/me", deps.UserHandler.UpdateProfile)
+
+	// Admin/HR operations
+	users.Get("/", deps.UserHandler.ListUsers)               // List all users
+	users.Get("/:id", deps.UserHandler.GetUserByID)          // Get user by ID
+	users.Patch("/:id", deps.UserHandler.UpdateUser)         // Update user
+	users.Delete("/:id", deps.UserHandler.DeleteUser)        // Delete user
+
 	// ========================================================================
 	// 404 Handler
 	// ========================================================================

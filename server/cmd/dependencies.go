@@ -34,9 +34,11 @@ type Dependencies struct {
 	SessionMgr   *auth.SessionManager
 	EmailService *utils.EmailService
 	AuthService  *services.AuthService
+	UserService  *services.UserService
 
 	// Handlers
 	AuthHandler *handlers.AuthHandler
+	UserHandler *handlers.UserHandler
 }
 
 // InitDependencies initializes all application dependencies
@@ -113,8 +115,14 @@ func InitDependencies() (*Dependencies, error) {
 	)
 	logger.Info().Msg("✅ Services initialized")
 
+	userService := services.NewUserService(userRepo)
+	logger.Info().Msg("✅ Services initialized")
+
 	// Initialize Handlers
 	authHandler := handlers.NewAuthHandler(authService)
+	logger.Info().Msg("✅ Handlers initialized")
+
+	userHandler := handlers.NewUserHandler(userService)
 	logger.Info().Msg("✅ Handlers initialized")
 
 	logger.Info().Msg("✅ All dependencies initialized successfully")
@@ -131,7 +139,9 @@ func InitDependencies() (*Dependencies, error) {
 		SessionMgr:   sessionMgr,
 		EmailService: emailService,
 		AuthService:  authService,
+		UserService:  userService,
 		AuthHandler:  authHandler,
+		UserHandler:  userHandler,
 	}, nil
 }
 
