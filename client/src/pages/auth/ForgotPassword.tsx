@@ -1,22 +1,16 @@
-// src/pages/ForgotPassword.tsx
-
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
 import { forgotPasswordSchema, type ForgotPasswordFormData } from "@/schemas/auth.schema";
 import { useForgotPassword } from "@/hooks/useAuth";
 import AuthInput from "@/common/AuthInput";
 import SubmitButton from "@/common/SubmitButton";
-import Toast from "@/common/Toast";
 import { ChevronDown, Error, Mail, TriangleAlert } from "@/svg/Common";
 import { Link } from "react-router-dom";
 import { Key } from "@/svg/Auth";
 
 const ForgotPassword = () => {
-  const [toastStatus, setToastStatus] = useState<"success" | "error" | null>(
-    null,
-  );
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [emailSent, setEmailSent] = useState(false);
   const [submittedEmail, setSubmittedEmail] = useState("");
   const [cooldown, setCooldown] = useState(0);
@@ -53,8 +47,7 @@ const ForgotPassword = () => {
   // Success handling
   useEffect(() => {
     if (isSuccess) {
-      setToastStatus("success");
-      setToastMessage("Password reset link sent! Please check your email.");
+      toast.success("Password reset link sent! Please check your email."); // Sonner Success
       setEmailSent(true);
       setCooldown(60); // 60 seconds cooldown
     }
@@ -66,8 +59,7 @@ const ForgotPassword = () => {
       const errorMessage =
         (error as any)?.response?.data?.error ||
         "Failed to send reset link. Please try again.";
-      setToastStatus("error");
-      setToastMessage(errorMessage);
+      toast.error(errorMessage); // Sonner Error
     }
   }, [isError, error]);
 
@@ -87,13 +79,7 @@ const ForgotPassword = () => {
     setCooldown(0);
     resetForm();
     resetMutation();
-    setToastStatus(null);
-    setToastMessage(null);
-  };
-
-  const handleToastClose = () => {
-    setToastStatus(null);
-    setToastMessage(null);
+    // Toast reset not needed for Sonner
   };
 
   // Email sent success screen
@@ -117,12 +103,7 @@ const ForgotPassword = () => {
           </p>
         </div>
 
-        {/* Toast */}
-        <Toast
-          status={toastStatus}
-          message={toastMessage}
-          onClose={handleToastClose}
-        />
+        {/* Removed <Toast /> component */}
 
         {/* Instructions */}
         <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-900 rounded-xl p-4 mb-6">
@@ -206,12 +187,7 @@ const ForgotPassword = () => {
         </p>
       </div>
 
-      {/* Toast */}
-      <Toast
-        status={toastStatus}
-        message={toastMessage}
-        onClose={handleToastClose}
-      />
+      {/* Removed <Toast /> component */}
 
       {/* Form */}
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

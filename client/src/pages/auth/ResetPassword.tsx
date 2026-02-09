@@ -1,9 +1,8 @@
-// src/pages/ResetPassword.tsx
-
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { useSearchParams } from "react-router-dom";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner"; 
 import {
   resetPasswordSchema,
   type ResetPasswordFormData,
@@ -11,7 +10,6 @@ import {
 import { useResetPassword } from "@/hooks/useAuth";
 import AuthInput from "@/common/AuthInput";
 import SubmitButton from "@/common/SubmitButton";
-import Toast from "@/common/Toast";
 import PasswordStrength from "@/common/PasswordStrength";
 import { ChevronDown, CircleCheck, Error, Shield, TriangleAlert } from "@/svg/Common";
 import { Link } from "react-router-dom";
@@ -20,11 +18,7 @@ import { Key } from "@/svg/Auth";
 const ResetPassword = () => {
 
   const [searchParams] = useSearchParams();
-
-  const [toastStatus, setToastStatus] = useState<"success" | "error" | null>(
-    null,
-  );
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  
   const [token, setToken] = useState<string | null>(null);
   const [isTokenValid, setIsTokenValid] = useState(true);
   const [countdown, setCountdown] = useState(5);
@@ -54,10 +48,7 @@ const ResetPassword = () => {
 
     if (!resetToken) {
       setIsTokenValid(false);
-      setToastStatus("error");
-      setToastMessage(
-        "Invalid or missing reset token. Please request a new password reset link.",
-      );
+      toast.error("Invalid or missing reset token. Please request a new password reset link."); // Sonner Error
     } else {
       setToken(resetToken);
     }
@@ -78,8 +69,7 @@ const ResetPassword = () => {
   // Initial success state
   useEffect(() => {
     if (isSuccess) {
-      setToastStatus("success");
-      setToastMessage("Password reset successful! Redirecting to login...");
+      toast.success("Password reset successful! Redirecting to login..."); // Sonner Success
     }
   }, [isSuccess]);
 
@@ -89,8 +79,7 @@ const ResetPassword = () => {
       const errorMessage =
         (error as any)?.response?.data?.error ||
         "Password reset failed. The link may be invalid or expired.";
-      setToastStatus("error");
-      setToastMessage(errorMessage);
+      toast.error(errorMessage); // Sonner Error
     }
   }, [isError, error]);
 
@@ -101,11 +90,6 @@ const ResetPassword = () => {
       token,
       new_password: data.password,
     });
-  };
-
-  const handleToastClose = () => {
-    setToastStatus(null);
-    setToastMessage(null);
   };
 
   // Success screen after password reset
@@ -176,12 +160,7 @@ const ResetPassword = () => {
             The password reset link is invalid or has expired.
           </p>
 
-          {/* Toast */}
-          <Toast
-            status={toastStatus}
-            message={toastMessage}
-            onClose={handleToastClose}
-          />
+          {/* Removed <Toast /> component */}
 
           {/* Error Message Box */}
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900 rounded-xl p-4 mb-6">
@@ -248,12 +227,7 @@ const ResetPassword = () => {
         </p>
       </div>
 
-      {/* Toast */}
-      <Toast
-        status={toastStatus}
-        message={toastMessage}
-        onClose={handleToastClose}
-      />
+      {/* Removed <Toast /> component */}
 
       {/* Form */}
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

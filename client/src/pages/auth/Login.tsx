@@ -3,27 +3,21 @@
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { toast } from 'sonner'; 
 import { useLogin, useVerify2FA } from '@/hooks/useAuth';
 import AuthInput from '@/common/AuthInput';
 import SubmitButton from '@/common/SubmitButton';
-import Toast from '@/common/Toast';
 import { Lock, User } from '@/svg/Auth';
 import { ChevronDown } from '@/svg/Common';
 import type { LoginRequest, Verify2FARequest } from '@/types/auth.types';
 import { loginSchema, twoFactorSchema, type LoginFormData, type TwoFactorFormData } from '@/schemas/auth.schema';
 import { Link } from 'react-router-dom';
 
-
-
 // ============================================================================
 // Login Component
 // ============================================================================
 
 const Login = () => {
-  // Toast state
-  const [toastStatus, setToastStatus] = useState<'success' | 'error' | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
   // 2FA state
   const [showOTPForm, setShowOTPForm] = useState(false);
   const [tempToken, setTempToken] = useState<string | null>(null);
@@ -61,13 +55,11 @@ const Login = () => {
       if (data.require_2fa && data.temp_token) {
         setTempToken(data.temp_token);
         setShowOTPForm(true);
-        setToastStatus('success');
-        setToastMessage('Please enter your 2FA code to continue');
+        toast.success('Please enter your 2FA code to continue'); // Sonner Success
       } 
       // Case 2: Direct Login Success (No 2FA)
       else if (data.access_token && data.user) {
-        setToastStatus('success');
-        setToastMessage('Login successful! Redirecting...');
+        toast.success('Login successful! Redirecting...'); // Sonner Success
         setTimeout(() => {
           window.location.href = '/dashboard';
         }, 500);
@@ -80,8 +72,7 @@ const Login = () => {
   // ============================================================================
   useEffect(() => {
     if (verify2FAMutation.isSuccess && verify2FAMutation.data) {
-      setToastStatus('success');
-      setToastMessage('2FA verified! Redirecting...');
+      toast.success('2FA verified! Redirecting...'); // Sonner Success
       setTimeout(() => {
         window.location.href = '/dashboard';
       }, 500);
@@ -96,8 +87,7 @@ const Login = () => {
       const errorMessage = 
         (loginMutation.error as any)?.response?.data?.error || 
         'Login failed. Please check your credentials.';
-      setToastStatus('error');
-      setToastMessage(errorMessage);
+      toast.error(errorMessage); // Sonner Error
     }
   }, [loginMutation.isError, loginMutation.error]);
 
@@ -109,8 +99,7 @@ const Login = () => {
       const errorMessage = 
         (verify2FAMutation.error as any)?.response?.data?.error || 
         'Invalid code. Please try again.';
-      setToastStatus('error');
-      setToastMessage(errorMessage);
+      toast.error(errorMessage); // Sonner Error
     }
   }, [verify2FAMutation.isError, verify2FAMutation.error]);
 
@@ -125,15 +114,14 @@ const Login = () => {
 
   const onOTPSubmit = (data: TwoFactorFormData) => {
     if (!tempToken) {
-      setToastStatus('error');
-      setToastMessage('Session expired. Please login again.');
+      toast.error('Session expired. Please login again.'); // Sonner Error
       handleBackToLogin();
       return;
     }
 
     const request: Verify2FARequest = {
       temp_token: tempToken,
-      code: data.code.replace(/\s/g, '').toUpperCase(), // Remove spaces and uppercase
+      code: data.code.replace(/\s/g, '').toUpperCase(), 
     };
 
     verify2FAMutation.verify2FA(request);
@@ -149,10 +137,7 @@ const Login = () => {
     verify2FAMutation.reset();
   };
 
-  const handleToastClose = () => {
-    setToastStatus(null);
-    setToastMessage(null);
-  };
+  // Removed handleToastClose as Sonner handles it automatically
 
   const toggleRecoveryCode = () => {
     setUseRecoveryCode(!useRecoveryCode);
@@ -194,11 +179,6 @@ const Login = () => {
             : 'Sign in to your account to continue'}
         </p>
       </div>
-
-      {/* ========================================================================
-          Toast Notifications
-      ======================================================================== */}
-      <Toast status={toastStatus} message={toastMessage} onClose={handleToastClose} />
 
       {/* ========================================================================
           Login Form (Email + Password)

@@ -1,7 +1,7 @@
 import { useAuthStore } from "@/store/auth.store"
 import { useMe } from "@/hooks/useUser";
 import PageLoader from "@/common/PageLoader";
-import { ProfileSidePanel } from "./Profile";
+import { ProfileSidePanel } from "./ProfileSidePanel";
 
 const Settings = () => {
 

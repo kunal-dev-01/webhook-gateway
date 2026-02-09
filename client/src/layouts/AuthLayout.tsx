@@ -11,6 +11,10 @@ const AuthLayout = memo(() => {
         <div className="absolute -top-[10%] -right-[5%] w-[50%] h-[50%] rounded-full bg-indigo-500/10 dark:bg-indigo-500/15 blur-[120px]" />
         {/* Bottom Left Glow */}
         <div className="absolute -bottom-[10%] -left-[5%] w-[50%] h-[50%] rounded-full bg-indigo-600/10 dark:bg-indigo-600/15 blur-[120px]" />
+
+        <h1 className="hidden md:block absolute bottom-4 left-1/2 -translate-x-1/2 text-8xl font-black pointer-events-none md:text-[20vw] text-transparent bg-clip-text bg-linear-to-t from-zinc-300 dark:from-zinc-900 to-indigo-400 dark:to-indigo-900 opacity-10">
+          Upnixo
+        </h1>
       </div>
 
       {/* ─── Top Navigation (Back Button) ─── */}

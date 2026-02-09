@@ -4,21 +4,16 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner"; 
 import { registerSchema, type RegisterFormData } from "@/schemas/auth.schema";
-import { useRegister } from "@/hooks/useAuth";
-import { useResendVerification } from "@/hooks/useAuth";
+import { useRegister, useResendVerification } from "@/hooks/useAuth";
 import AuthInput from "@/common/AuthInput";
 import SubmitButton from "@/common/SubmitButton";
-import Toast from "@/common/Toast";
 import PasswordStrength from "@/common/PasswordStrength";
 import { User } from "@/svg/Auth";
 import { ChevronDown, Mail } from "@/svg/Common";
 
 const Register = () => {
-  const [toastStatus, setToastStatus] = useState<"success" | "error" | null>(
-    null,
-  );
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showVerification, setShowVerification] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState("");
   const [cooldown, setCooldown] = useState(0);
@@ -55,10 +50,7 @@ const Register = () => {
   // Register success handling
   useEffect(() => {
     if (registerMutation.isSuccess) {
-      setToastStatus("success");
-      setToastMessage(
-        "Registration successful! Please check your email to verify your account.",
-      );
+      toast.success("Registration successful! Please check your email to verify your account."); // Sonner Success
       setShowVerification(true);
     }
   }, [registerMutation.isSuccess]);
@@ -69,16 +61,14 @@ const Register = () => {
       const errorMessage =
         (registerMutation.error as any)?.response?.data?.error ||
         "Registration failed. Please try again.";
-      setToastStatus("error");
-      setToastMessage(errorMessage);
+      toast.error(errorMessage); // Sonner Error
     }
   }, [registerMutation.isError, registerMutation.error]);
 
   // Resend verification success
   useEffect(() => {
     if (resendMutation.isSuccess) {
-      setToastStatus("success");
-      setToastMessage("Verification email sent! Please check your inbox.");
+      toast.success("Verification email sent! Please check your inbox."); // Sonner Success
       setCooldown(60); // 60 seconds cooldown
     }
   }, [resendMutation.isSuccess]);
@@ -89,8 +79,7 @@ const Register = () => {
       const errorMessage =
         (resendMutation.error as any)?.response?.data?.error ||
         "Failed to resend email. Please try again.";
-      setToastStatus("error");
-      setToastMessage(errorMessage);
+      toast.error(errorMessage); // Sonner Error
     }
   }, [resendMutation.isError, resendMutation.error]);
 
@@ -108,12 +97,6 @@ const Register = () => {
     resendMutation.resendVerification({ email: registeredEmail });
   };
 
-  const handleToastClose = () => {
-    setToastStatus(null);
-    setToastMessage(null);
-  };
-
-  // Show verification message after successful registration
   if (showVerification) {
     return (
       <div className="w-full max-w-md mx-auto">
@@ -133,13 +116,6 @@ const Register = () => {
             </span>
           </p>
         </div>
-
-        {/* Toast */}
-        <Toast
-          status={toastStatus}
-          message={toastMessage}
-          onClose={handleToastClose}
-        />
 
         {/* Instructions */}
         <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-900 rounded-xl p-4 mb-6">
@@ -194,13 +170,6 @@ const Register = () => {
           Sign up to get started
         </p>
       </div>
-
-      {/* Toast */}
-      <Toast
-        status={toastStatus}
-        message={toastMessage}
-        onClose={handleToastClose}
-      />
 
       {/* Form */}
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

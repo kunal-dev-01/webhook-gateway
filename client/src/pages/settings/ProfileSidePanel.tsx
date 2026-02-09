@@ -1,19 +1,17 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner"; // Sonner import
 import { useAuthStore } from "@/store/auth.store";
 import { useUpdateProfile } from "@/hooks/useUser";
 import { useLogout, useResendVerification } from "@/hooks/useAuth";
 import AuthInput from "@/common/AuthInput";
 import SubmitButton from "@/common/SubmitButton";
-import Toast from "@/common/Toast";
 import { TriangleAlert, X } from "@/svg/Common";
 import { BadgeCheck, Logout, Pen } from "@/svg/Auth";
 import { Loader } from "@/common/Loader";
+import { profileSchema, type ProfileFormData } from "@/schemas/user.schema";
 
-interface ProfileFormData {
-  name: string;
-  email: string;
-}
 
 export const ProfileSidePanel = () => {
   const user = useAuthStore((state) => state.user);
@@ -29,15 +27,6 @@ export const ProfileSidePanel = () => {
     useResendVerification();
 
   const [isEditing, setIsEditing] = useState(false);
-  const [toast, setToast] = useState<{
-    status: "success" | "error" | null;
-    message: string | null;
-  }>({
-    status: null,
-    message: null,
-  });
-
-  // Cooldown state for resend verification
   const [cooldown, setCooldown] = useState(0);
 
   const {
@@ -46,6 +35,7 @@ export const ProfileSidePanel = () => {
     reset,
     formState: { errors },
   } = useForm<ProfileFormData>({
+    resolver: zodResolver(profileSchema),
     defaultValues: { name: user?.full_name || "", email: user?.email || "" },
   });
 
@@ -57,12 +47,12 @@ export const ProfileSidePanel = () => {
 
   useEffect(() => {
     if (isSuccess) {
-      setToast({ status: "success", message: "Profile updated successfully." });
+      toast.success("Profile updated successfully.");
       setIsEditing(false);
       resetMutation();
     }
     if (isError) {
-      setToast({ status: "error", message: "Failed to update profile." });
+      toast.error("Failed to update profile.");
     }
   }, [isSuccess, isError, resetMutation]);
 
@@ -95,17 +85,11 @@ export const ProfileSidePanel = () => {
       { email: user.email },
       {
         onSuccess: () => {
-          setToast({
-            status: "success",
-            message: "Verification email sent! Please check your inbox.",
-          });
-          setCooldown(60); // 60 seconds cooldown
+          toast.success("Verification email sent! Please check your inbox."); 
+          setCooldown(60);
         },
         onError: () => {
-          setToast({
-            status: "error",
-            message: "Failed to send verification email. Please try again.",
-          });
+          toast.error("Failed to send verification email. Please try again."); 
         },
       },
     );
@@ -124,7 +108,6 @@ export const ProfileSidePanel = () => {
 
   return (
     <section className="bg-white dark:bg-zinc-900/70 border border-zinc-200 dark:border-zinc-800 rounded-4xl p-6 relative overflow-hidden flex flex-col h-full justify-between">
-      {/* Edit/Cancel Toggle */}
       <button
         onClick={isEditing ? handleCancel : () => setIsEditing(true)}
         className={`absolute top-4 right-4 px-3 py-1.5 rounded-full transition-all duration-200 group cursor-pointer border border-zinc-200 dark:border-zinc-800 ${
@@ -147,7 +130,7 @@ export const ProfileSidePanel = () => {
             </span>
           </div>
           {/* Active Dot */}
-          <div className="absolute bottom-1 right-1 w-5 h-5 bg-emerald-500 border-4 border-white dark:border-zinc-800 rounded-full shadow-sm"></div>
+          <div className="absolute bottom-1 right-1 w-5 h-5 bg-emerald-500 border-4 border-white dark:border-zinc-800 rounded-full"></div>
         </div>
 
         {!isEditing ? (
@@ -233,6 +216,8 @@ export const ProfileSidePanel = () => {
                 error={errors.name?.message}
               />
             </div>
+            {/* Hidden/Disabled Email Input if needed for structure, or removed as per design preference */}
+            
             <div className="pt-2">
               <SubmitButton loading={isPending} disabled={isPending}>
                 {isPending ? "Saving..." : "Save Changes"}
@@ -240,14 +225,6 @@ export const ProfileSidePanel = () => {
             </div>
           </form>
         )}
-      </div>
-
-      <div className="mt-2">
-        <Toast
-          status={toast.status}
-          message={toast.message}
-          onClose={() => setToast({ status: null, message: null })}
-        />
       </div>
 
       {/* Footer Area: Logout Button */}
