@@ -70,7 +70,7 @@ const Login = () => {
         setToastMessage('Login successful! Redirecting...');
         setTimeout(() => {
           window.location.href = '/dashboard';
-        }, 1500);
+        }, 500);
       }
     }
   }, [loginMutation.isSuccess, loginMutation.data]);
@@ -84,7 +84,7 @@ const Login = () => {
       setToastMessage('2FA verified! Redirecting...');
       setTimeout(() => {
         window.location.href = '/dashboard';
-      }, 1500);
+      }, 500);
     }
   }, [verify2FAMutation.isSuccess, verify2FAMutation.data]);
 
