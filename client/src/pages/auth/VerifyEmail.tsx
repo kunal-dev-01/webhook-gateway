@@ -16,7 +16,7 @@ const VerifyEmail = () => {
   const [verificationState, setVerificationState] =
     useState<VerificationState>("verifying");
   const [errorMessage, setErrorMessage] = useState<string>("");
-  const [countdown, setCountdown] = useState(5);
+  const [countdown, setCountdown] = useState(2);
 
   const { verifyEmail, isPending, isSuccess, isError, error } =
     useVerifyEmail();

@@ -6,6 +6,8 @@ import (
 	"encoding/base32"
 	"encoding/hex"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"shared/config"
@@ -17,19 +19,19 @@ import (
 // TOTPManager handles TOTP (2FA) operations
 type TOTPManager struct {
 	config *config.TOTPConfig
-	aesKey []byte // 32 bytes for AES-256
+	aesKey []byte
 }
 
-// NewTOTPManager creates new TOTP manager from config
+// NewTOTPManager creates new TOTP manager
 func NewTOTPManager(cfg *config.TOTPConfig) (*TOTPManager, error) {
-	// Decode AES key from hex
+	// Decode AES key once during initialization
 	aesKey, err := hex.DecodeString(cfg.AESKey)
 	if err != nil {
-		return nil, fmt.Errorf("invalid TOTP_AES_KEY: %w", err)
+		return nil, fmt.Errorf("invalid TOTP_AES_KEY format: %w", err)
 	}
 
 	if len(aesKey) != 32 {
-		return nil, fmt.Errorf("TOTP_AES_KEY must be 32 bytes (64 hex chars)")
+		return nil, fmt.Errorf("TOTP_AES_KEY must be exactly 32 bytes (64 hex chars)")
 	}
 
 	return &TOTPManager{
@@ -44,7 +46,7 @@ func NewTOTPManager(cfg *config.TOTPConfig) (*TOTPManager, error) {
 
 // GenerateSecret generates a new TOTP secret for a user
 func (t *TOTPManager) GenerateSecret(email string) (*otp.Key, error) {
-	key, err := totp.Generate(totp.GenerateOpts{
+	return totp.Generate(totp.GenerateOpts{
 		Issuer:      t.config.Issuer,
 		AccountName: email,
 		Period:      30,
@@ -52,122 +54,92 @@ func (t *TOTPManager) GenerateSecret(email string) (*otp.Key, error) {
 		Digits:      otp.DigitsSix,
 		Algorithm:   otp.AlgorithmSHA1,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate TOTP secret: %w", err)
-	}
-
-	return key, nil
 }
 
 // ============================================================================
-// TOTP Validation - CORRECTED ✅
+// TOTP Validation - OPTIMIZED
 // ============================================================================
 
-// ValidateCode validates a TOTP code with extra tolerance (Skew)
+// ValidateCode checks the code against the secret with default tolerance
 func (t *TOTPManager) ValidateCode(secret, code string) bool {
-    valid, err := totp.ValidateCustom(
-        code,
-        secret,
-        time.Now().UTC(),
-        totp.ValidateOpts{
-            Period:    30,
-            Skew:      2, // 👈 Ye important hai. Isse tolerance badhti hai.
-            Digits:    otp.DigitsSix,
-            Algorithm: otp.AlgorithmSHA1,
-        },
-    )
-
-    if err != nil {
-        return false
-    }
-
-    return valid
+	// Skew 1 = Allow 1 period before and 1 period after (30s * 3 window)
+	return t.ValidateCodeWithSkew(secret, code, 1)
 }
 
-// ValidateCodeWithSkew validates with custom time skew
+// ValidateCodeWithSkew validates with custom tolerance
 func (t *TOTPManager) ValidateCodeWithSkew(secret, code string, skew uint) bool {
-	now := time.Now()
+	// ✅ OPTIMIZED: Library's native implementation is faster than manual loops
+	// It handles time window calculation internally without multiple GenerateCode calls
+	valid, err := totp.ValidateCustom(
+		code,
+		secret,
+		time.Now().UTC(),
+		totp.ValidateOpts{
+			Period:    30,
+			Skew:      skew,
+			Digits:    otp.DigitsSix,
+			Algorithm: otp.AlgorithmSHA1,
+		},
+	)
 
-	// ✅ CORRECT: Manual validation with custom skew
-	// Check current time
-	if totp.Validate(code, secret) {
-		return true
+	if err != nil {
+		return false
 	}
-
-	// Check past windows
-	for i := uint(1); i <= skew; i++ {
-		pastTime := now.Add(-time.Duration(i) * 30 * time.Second)
-		pastCode, err := totp.GenerateCode(secret, pastTime)
-		if err != nil {
-			continue
-		}
-		if code == pastCode {
-			return true
-		}
-	}
-
-	// Check future windows
-	for i := uint(1); i <= skew; i++ {
-		futureTime := now.Add(time.Duration(i) * 30 * time.Second)
-		futureCode, err := totp.GenerateCode(secret, futureTime)
-		if err != nil {
-			continue
-		}
-		if code == futureCode {
-			return true
-		}
-	}
-
-	return false
+	return valid
 }
 
 // ============================================================================
-// Recovery Codes - OPTIMIZED
+// Recovery Codes - BULK OPTIMIZED
 // ============================================================================
 
-// GenerateRecoveryCodes generates backup recovery codes
+// GenerateRecoveryCodes generates distinct recovery codes
 func (t *TOTPManager) GenerateRecoveryCodes(count int) ([]string, error) {
 	if count <= 0 {
 		count = 10
 	}
 
+	// ✅ OPTIMIZATION: Bulk Random Read (1 Syscall instead of N)
+	// Base32 needs 5 bytes to produce 8 characters
+	// We need 'count' chunks of 5 bytes
+	totalBytes := count * 5
+	randomData := make([]byte, totalBytes)
+	
+	if _, err := rand.Read(randomData); err != nil {
+		return nil, fmt.Errorf("failed to generate entropy: %w", err)
+	}
+
 	codes := make([]string, count)
+	encoder := base32.StdEncoding.WithPadding(base32.NoPadding)
+
 	for i := 0; i < count; i++ {
-		code, err := generateRecoveryCode()
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate recovery code: %w", err)
-		}
-		codes[i] = code
+		// Slice the bulk data
+		start := i * 5
+		end := start + 5
+		chunk := randomData[start:end]
+		
+		// Encode to string (result is exactly 8 chars)
+		codes[i] = encoder.EncodeToString(chunk)
 	}
 
 	return codes, nil
 }
 
-func generateRecoveryCode() (string, error) {
-	b := make([]byte, 5)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	// Generate 8 character code (e.g., "ABCD1234")
-	code := base32.StdEncoding.EncodeToString(b)[:8]
-	return code, nil
-}
-
-// ValidateRecoveryCode checks if recovery code is valid
-// Uses constant-time comparison to prevent timing attacks
-func (t *TOTPManager) ValidateRecoveryCode(code string, recoveryCodes []string) (bool, int) {
-	if len(code) == 0 || len(recoveryCodes) == 0 {
+// ValidateRecoveryCode checks if recovery code is valid (Constant Time)
+func (t *TOTPManager) ValidateRecoveryCode(inputCode string, storedCodes []string) (bool, int) {
+	if len(inputCode) == 0 || len(storedCodes) == 0 {
 		return false, -1
 	}
 
-	// Normalize input
-	code = normalizeRecoveryCode(code)
+	// Normalize input once
+	normalizedInput := normalizeRecoveryCode(inputCode)
+	inputBytes := []byte(normalizedInput)
 
-	for i, recoveryCode := range recoveryCodes {
-		normalized := normalizeRecoveryCode(recoveryCode)
+	for i, storedCode := range storedCodes {
+		// Normalize stored code (usually stored raw, but good to be safe)
+		normalizedStored := normalizeRecoveryCode(storedCode)
 
-		// ✅ SECURITY: Use constant-time comparison to prevent timing attacks
-		if subtle.ConstantTimeCompare([]byte(code), []byte(normalized)) == 1 {
+		// ✅ SECURITY: ConstantTimeCompare prevents Timing Attacks
+		if subtle.ConstantTimeCompare(inputBytes, []byte(normalizedStored)) == 1 {
 			return true, i
 		}
 	}
@@ -175,33 +147,41 @@ func (t *TOTPManager) ValidateRecoveryCode(code string, recoveryCodes []string) 
 	return false, -1
 }
 
-// normalizeRecoveryCode removes spaces and converts to uppercase
+// normalizeRecoveryCode removes separators and uppercases (Optimized)
 func normalizeRecoveryCode(code string) string {
-	result := ""
+	// ✅ OPTIMIZATION: strings.Builder minimizes allocations
+	var b strings.Builder
+	b.Grow(len(code))
+
 	for _, char := range code {
-		if char != ' ' && char != '-' {
-			if char >= 'a' && char <= 'z' {
-				result += string(char - 32) // Convert to uppercase
-			} else {
-				result += string(char)
-			}
+		// Allow 0-9
+		if char >= '0' && char <= '9' {
+			b.WriteRune(char)
+			continue
 		}
+		// Allow A-Z
+		if char >= 'A' && char <= 'Z' {
+			b.WriteRune(char)
+			continue
+		}
+		// Convert a-z to A-Z
+		if char >= 'a' && char <= 'z' {
+			b.WriteRune(char - 32)
+			continue
+		}
+		// Skip everything else (spaces, dashes)
 	}
-	return result
+	return b.String()
 }
 
 // ============================================================================
-// Encryption (for storing secrets in DB)
+// Encryption & Helpers
 // ============================================================================
 
 // GetAESKey returns the AES encryption key
 func (t *TOTPManager) GetAESKey() []byte {
 	return t.aesKey
 }
-
-// ============================================================================
-// QR Code Generation
-// ============================================================================
 
 // GetQRCodeURL returns URL for QR code generation
 func (t *TOTPManager) GetQRCodeURL(key *otp.Key) string {
@@ -210,11 +190,15 @@ func (t *TOTPManager) GetQRCodeURL(key *otp.Key) string {
 
 // GetProvisioningURI returns provisioning URI for manual entry
 func (t *TOTPManager) GetProvisioningURI(email, secret string) string {
-	return fmt.Sprintf("otpauth://totp/%s:%s?secret=%s&issuer=%s",
-		t.config.Issuer, email, secret, t.config.Issuer)
+	// ✅ SAFETY: Use URL encoding to prevent broken links with special chars
+	issuer := url.QueryEscape(t.config.Issuer)
+	user := url.QueryEscape(email)
+	
+	return fmt.Sprintf("otpauth://totp/%s:%s?secret=%s&issuer=%s&algorithm=SHA1&digits=6&period=30",
+		issuer, user, secret, issuer)
 }
 
-// GetCurrentCode generates current TOTP code (for testing/debugging)
+// GetCurrentCode generates current TOTP code (Testing helper)
 func (t *TOTPManager) GetCurrentCode(secret string) (string, error) {
-	return totp.GenerateCode(secret, time.Now())
+	return totp.GenerateCode(secret, time.Now().UTC())
 }

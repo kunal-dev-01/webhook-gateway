@@ -13,21 +13,27 @@ import (
 	"github.com/google/uuid"
 )
 
+// Standard errors for consistent handling upstream
 var (
 	ErrInvalidToken     = errors.New("invalid token")
 	ErrExpiredToken     = errors.New("token has expired")
 	ErrInvalidSignature = errors.New("invalid token signature")
 	ErrInvalidClaims    = errors.New("invalid token claims")
+	ErrInvalidAudience  = errors.New("invalid token audience")
 )
 
-// Manager handles JWT operations
-type Manager struct {
-	config *config.JWTConfig
+// TokenManager handles JWT operations
+type TokenManager struct {
+	config      *config.JWTConfig
+	secretBytes []byte // Pre-converted secret to avoid allocation on every request
 }
 
-// NewManager creates new JWT manager from config
-func NewManager(cfg *config.JWTConfig) *Manager {
-	return &Manager{config: cfg}
+// NewTokenManager creates new JWT manager with optimized configuration
+func NewTokenManager(cfg *config.JWTConfig) *TokenManager {
+	return &TokenManager{
+		config:      cfg,
+		secretBytes: []byte(cfg.Secret), // Optimize: Convert once, use everywhere
+	}
 }
 
 // Claims represents JWT claims
@@ -54,17 +60,20 @@ type TokenPair struct {
 // ============================================================================
 
 // GenerateTokenPair generates both access and refresh tokens
-func (m *Manager) GenerateTokenPair(userID uuid.UUID, email, role string) (*TokenPair, error) {
+func (m *TokenManager) GenerateTokenPair(userID uuid.UUID, email, role string) (*TokenPair, error) {
+	// Generate a cryptographic random session ID
 	sessionID, err := generateSessionID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate session ID: %w", err)
 	}
 
+	// Generate Access Token
 	accessToken, err := m.generateToken(userID, email, role, sessionID, "access", m.config.AccessTokenDuration)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
 	}
 
+	// Generate Refresh Token
 	refreshToken, err := m.generateToken(userID, email, role, sessionID, "refresh", m.config.RefreshTokenDuration)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
@@ -79,9 +88,9 @@ func (m *Manager) GenerateTokenPair(userID uuid.UUID, email, role string) (*Toke
 	}, nil
 }
 
-// generateToken creates a JWT token
-func (m *Manager) generateToken(userID uuid.UUID, email, role, sessionID, tokenType string, duration time.Duration) (string, error) {
+func (m *TokenManager) generateToken(userID uuid.UUID, email, role, sessionID, tokenType string, duration time.Duration) (string, error) {
 	now := time.Now()
+	
 	claims := Claims{
 		UserID:    userID,
 		Email:     email,
@@ -98,8 +107,11 @@ func (m *Manager) generateToken(userID uuid.UUID, email, role, sessionID, tokenT
 		},
 	}
 
+	// Use SigningMethodHS256 explicitly
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(m.config.Secret))
+	
+	// Use pre-converted bytes
+	return token.SignedString(m.secretBytes)
 }
 
 // ============================================================================
@@ -107,32 +119,38 @@ func (m *Manager) generateToken(userID uuid.UUID, email, role, sessionID, tokenT
 // ============================================================================
 
 // ValidateAccessToken validates and parses access token
-func (m *Manager) ValidateAccessToken(tokenString string) (*Claims, error) {
+func (m *TokenManager) ValidateAccessToken(tokenString string) (*Claims, error) {
 	return m.validateToken(tokenString, "access")
 }
 
 // ValidateRefreshToken validates and parses refresh token
-func (m *Manager) ValidateRefreshToken(tokenString string) (*Claims, error) {
+func (m *TokenManager) ValidateRefreshToken(tokenString string) (*Claims, error) {
 	return m.validateToken(tokenString, "refresh")
 }
 
-// validateToken validates JWT token
-func (m *Manager) validateToken(tokenString, expectedType string) (*Claims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (any, error) {
+func (m *TokenManager) validateToken(tokenString, expectedType string) (*Claims, error) {
+	// Parse and validate signature
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		// Strict Algorithm Check: Must be HMAC
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return []byte(m.config.Secret), nil
+		// Use pre-converted bytes
+		return m.secretBytes, nil
 	})
 
 	if err != nil {
-		if errors.Is(err, jwt.ErrTokenExpired) {
+		// Precise Error Mapping for v5
+		switch {
+		case errors.Is(err, jwt.ErrTokenExpired):
 			return nil, ErrExpiredToken
-		}
-		if errors.Is(err, jwt.ErrSignatureInvalid) {
+		case errors.Is(err, jwt.ErrTokenSignatureInvalid):
 			return nil, ErrInvalidSignature
+		case errors.Is(err, jwt.ErrTokenMalformed):
+			return nil, ErrInvalidToken
+		default:
+			return nil, fmt.Errorf("token validation failed: %w", err)
 		}
-		return nil, ErrInvalidToken
 	}
 
 	claims, ok := token.Claims.(*Claims)
@@ -140,11 +158,14 @@ func (m *Manager) validateToken(tokenString, expectedType string) (*Claims, erro
 		return nil, ErrInvalidToken
 	}
 
+	// Logic Checks
 	if claims.TokenType != expectedType {
-		return nil, fmt.Errorf("expected %s token, got %s", expectedType, claims.TokenType)
+		return nil, fmt.Errorf("invalid token type: expected %s, got %s", expectedType, claims.TokenType)
 	}
 
-	if claims.Issuer != m.config.Issuer {
+	// Verify Issuer using built-in validator
+	issuer, err := claims.GetIssuer()
+	if err != nil || issuer != m.config.Issuer {
 		return nil, ErrInvalidClaims
 	}
 
@@ -155,13 +176,17 @@ func (m *Manager) validateToken(tokenString, expectedType string) (*Claims, erro
 // Token Refresh
 // ============================================================================
 
-// RefreshAccessToken generates new access token from refresh token
-func (m *Manager) RefreshAccessToken(refreshTokenString string) (string, error) {
+// RefreshAccessToken generates a new access token using a valid refresh token.
+// IMPORTANT: It preserves the original SessionID to maintain session continuity.
+func (m *TokenManager) RefreshAccessToken(refreshTokenString string) (string, error) {
 	claims, err := m.ValidateRefreshToken(refreshTokenString)
 	if err != nil {
 		return "", err
 	}
 
+	// Issue new access token, but KEEP the original SessionID
+	// This ensures that if the session is revoked in Redis, this new token 
+	// (which shares the sessionID) will also be blocked by middleware.
 	return m.generateToken(
 		claims.UserID,
 		claims.Email,
@@ -176,22 +201,21 @@ func (m *Manager) RefreshAccessToken(refreshTokenString string) (string, error) 
 // Helper Functions
 // ============================================================================
 
+// generateSessionID creates a cryptographically secure random ID
 func generateSessionID() (string, error) {
+	// 32 bytes gives 256 bits of entropy
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
+	// URL-safe base64 is better for web headers than hex
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
-// ExtractTokenFromBearer extracts token from "Bearer {token}" string
+// ExtractTokenFromBearer extracts token from "Bearer <token>" header
 func ExtractTokenFromBearer(authHeader string) (string, error) {
-	const prefix = "Bearer "
-	if len(authHeader) < len(prefix) {
-		return "", errors.New("invalid authorization header format")
+	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+		return authHeader[7:], nil
 	}
-	if authHeader[:len(prefix)] != prefix {
-		return "", errors.New("missing Bearer prefix")
-	}
-	return authHeader[len(prefix):], nil
+	return "", errors.New("invalid authorization header format")
 }

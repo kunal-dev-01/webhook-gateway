@@ -1,23 +1,32 @@
 package middleware
 
 import (
+	"slices"
 	"errors"
-
-	"shared/auth"
-	"shared/redis"
+	"fmt"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
+	"shared/auth"
+)
+
+// Context Keys (To avoid typos and use consistently)
+const (
+	CtxUserID    = "user_id"
+	CtxUserEmail = "email"
+	CtxUserRole  = "role"
+	CtxSessionID = "session_id"
 )
 
 // AuthMiddleware handles JWT authentication
 type AuthMiddleware struct {
-	jwtManager *auth.Manager
+	jwtManager *auth.TokenManager // Updated to TokenManager
 	redis      *redis.Client
 }
 
 // NewAuthMiddleware creates new auth middleware
-func NewAuthMiddleware(jwtManager *auth.Manager, redisClient *redis.Client) *AuthMiddleware {
+func NewAuthMiddleware(jwtManager *auth.TokenManager, redisClient *redis.Client) *AuthMiddleware {
 	return &AuthMiddleware{
 		jwtManager: jwtManager,
 		redis:      redisClient,
@@ -25,101 +34,28 @@ func NewAuthMiddleware(jwtManager *auth.Manager, redisClient *redis.Client) *Aut
 }
 
 // ============================================================================
-// Middleware Functions - OPTIMIZED
+// Core Middleware
 // ============================================================================
 
-// RequireAuth validates JWT and session - OPTIMIZED
+// RequireAuth validates JWT and checks Redis for session revocation
 func (m *AuthMiddleware) RequireAuth() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		// Extract token from Authorization header
-		authHeader := c.Get("Authorization")
-		if authHeader == "" {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"success": false,
-				"error":   "missing authorization header",
-			})
-		}
-
-		token, err := auth.ExtractTokenFromBearer(authHeader)
+		claims, err := m.verifyRequest(c)
 		if err != nil {
+			// Return specific error structure
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"success": false,
-				"error":   "invalid authorization header format",
+				"error":   err.Error(),
 			})
 		}
 
-		// Validate access token
-		claims, err := m.jwtManager.ValidateAccessToken(token)
-		if err != nil {
-			if errors.Is(err, auth.ErrExpiredToken) {
-				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-					"success": false,
-					"error":   "token expired",
-					"code":    "TOKEN_EXPIRED",
-				})
-			}
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"success": false,
-				"error":   "invalid token",
-			})
-		}
-
-		// ✅ OPTIMIZED: Use EXISTS instead of GET (2x faster, no deserialization)
-		sessionKey := "session:" + claims.UserID.String() + ":" + claims.SessionID
-		
-		exists, err := m.redis.Exists(c.Context(), sessionKey).Result()
-		if err != nil {
-			// ✅ OPTIMIZED: Graceful degradation - log but continue
-			// In production, you might want to fail here
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"success": false,
-				"error":   "session validation failed",
-			})
-		}
-		
-		if exists == 0 {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"success": false,
-				"error":   "session not found or expired",
-			})
-		}
-
-		// Set user info in context
-		c.Locals("user_id", claims.UserID)
-		c.Locals("email", claims.Email)
-		c.Locals("role", claims.Role)
-		c.Locals("session_id", claims.SessionID)
-
+		// Inject user data into context
+		m.setContext(c, claims)
 		return c.Next()
 	}
 }
 
-// RequireRole checks if user has required role
-func (m *AuthMiddleware) RequireRole(allowedRoles ...string) fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		role := c.Locals("role")
-		if role == nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"success": false,
-				"error":   "user role not found in context",
-			})
-		}
-
-		userRole := role.(string)
-		for _, allowedRole := range allowedRoles {
-			if userRole == allowedRole {
-				return c.Next()
-			}
-		}
-
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-			"success": false,
-			"error":   "insufficient permissions",
-		})
-	}
-}
-
-// OptionalAuth validates JWT if present but doesn't require it
+// OptionalAuth checks JWT if present, but doesn't block request if missing
 func (m *AuthMiddleware) OptionalAuth() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
@@ -127,67 +63,134 @@ func (m *AuthMiddleware) OptionalAuth() fiber.Handler {
 			return c.Next()
 		}
 
-		token, err := auth.ExtractTokenFromBearer(authHeader)
-		if err != nil {
-			return c.Next()
+		// Try to verify, but ignore errors
+		if claims, err := m.verifyRequest(c); err == nil {
+			m.setContext(c, claims)
 		}
-
-		claims, err := m.jwtManager.ValidateAccessToken(token)
-		if err != nil {
-			return c.Next()
-		}
-
-		// Set user info if valid
-		c.Locals("user_id", claims.UserID)
-		c.Locals("email", claims.Email)
-		c.Locals("role", claims.Role)
-		c.Locals("session_id", claims.SessionID)
 
 		return c.Next()
 	}
 }
 
+// RequireRole enforces RBAC (Role Based Access Control)
+func (m *AuthMiddleware) RequireRole(allowedRoles ...string) fiber.Handler {
+	// Optimization: Convert slice to map for O(1) lookup if roles > 3, 
+	// but for small lists, loop is faster/negligible.
+	return func(c *fiber.Ctx) error {
+		userRole, err := GetUserRole(c)
+		if err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"success": false,
+				"error":   "unauthorized: role not found",
+			})
+		}
+
+		if slices.Contains(allowedRoles, userRole) {
+				return c.Next()
+			}
+
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"success": false,
+			"error":   "forbidden: insufficient permissions",
+		})
+	}
+}
+
 // ============================================================================
-// Helper Functions
+// Internal Helpers (Optimization Logic)
 // ============================================================================
 
-// GetUserID retrieves user ID from context
+// verifyRequest handles the heavy lifting: Header -> Token -> Claims -> Redis Check
+func (m *AuthMiddleware) verifyRequest(c *fiber.Ctx) (*auth.Claims, error) {
+	// 1. Extract Header
+	authHeader := c.Get("Authorization")
+	if authHeader == "" {
+		return nil, errors.New("missing authorization header")
+	}
+
+	// 2. Parse Token String
+	tokenString, err := auth.ExtractTokenFromBearer(authHeader)
+	if err != nil {
+		return nil, errors.New("invalid authorization header format")
+	}
+
+	// 3. Validate JWT Signature & Expiry
+	claims, err := m.jwtManager.ValidateAccessToken(tokenString)
+	if err != nil {
+		if errors.Is(err, auth.ErrExpiredToken) {
+			return nil, errors.New("token expired")
+		}
+		return nil, errors.New("invalid token")
+	}
+
+	// 4. Redis Security Check (Is Session Active?)
+	// Key format must match SessionManager: "session:USER_ID:SESSION_ID"
+	sessionKey := fmt.Sprintf("session:%s:%s", claims.UserID, claims.SessionID)
+
+	// Use Exists (Fast, no data fetch)
+	exists, err := m.redis.Exists(c.Context(), sessionKey).Result()
+	if err != nil {
+		// Fail Closed: If Redis is down, we cannot guarantee security.
+		return nil, errors.New("system error: session check failed")
+	}
+	
+	if exists == 0 {
+		return nil, errors.New("session expired or revoked")
+	}
+
+	return claims, nil
+}
+
+// setContext injects claims into Fiber locals using constants
+func (m *AuthMiddleware) setContext(c *fiber.Ctx, claims *auth.Claims) {
+	c.Locals(CtxUserID, claims.UserID)
+	c.Locals(CtxUserEmail, claims.Email)
+	c.Locals(CtxUserRole, claims.Role)
+	c.Locals(CtxSessionID, claims.SessionID)
+}
+
+// ============================================================================
+// Public Context Getters
+// ============================================================================
+
+// GetUserID retrieves user ID safely
 func GetUserID(c *fiber.Ctx) (uuid.UUID, error) {
-	userID := c.Locals("user_id")
-	if userID == nil {
-		return uuid.Nil, errors.New("user ID not found in context")
+	val := c.Locals(CtxUserID)
+	if id, ok := val.(uuid.UUID); ok {
+		return id, nil
 	}
-	return userID.(uuid.UUID), nil
+	return uuid.Nil, errors.New("user ID not found in context")
 }
 
-// GetUserEmail retrieves user email from context
+// GetUserEmail retrieves user email safely
 func GetUserEmail(c *fiber.Ctx) (string, error) {
-	email := c.Locals("email")
-	if email == nil {
-		return "", errors.New("user email not found in context")
+	val := c.Locals(CtxUserEmail)
+	if email, ok := val.(string); ok {
+		return email, nil
 	}
-	return email.(string), nil
+	return "", errors.New("email not found in context")
 }
 
-// GetUserRole retrieves user role from context
+// GetUserRole retrieves user role safely
 func GetUserRole(c *fiber.Ctx) (string, error) {
-	role := c.Locals("role")
-	if role == nil {
-		return "", errors.New("user role not found in context")
+	val := c.Locals(CtxUserRole)
+	if role, ok := val.(string); ok {
+		return role, nil
 	}
-	return role.(string), nil
+	return "", errors.New("role not found in context")
 }
 
-// GetSessionID retrieves session ID from context
+// GetSessionID retrieves session ID safely
 func GetSessionID(c *fiber.Ctx) (string, error) {
-	sessionID := c.Locals("session_id")
-	if sessionID == nil {
-		return "", errors.New("session ID not found in context")
+	val := c.Locals(CtxSessionID)
+	if sid, ok := val.(string); ok {
+		return sid, nil
 	}
-	return sessionID.(string), nil
+	return "", errors.New("session ID not found in context")
 }
 
-// IsAuthenticated checks if request is authenticated
+// IsAuthenticated fast check
 func IsAuthenticated(c *fiber.Ctx) bool {
-	return c.Locals("user_id") != nil
+	_, ok := c.Locals(CtxUserID).(uuid.UUID)
+	return ok
 }

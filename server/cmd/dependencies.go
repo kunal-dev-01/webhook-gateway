@@ -2,13 +2,18 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"server/internal/handlers"
 	"server/internal/repository"
 	"server/internal/services"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
 	"github.com/rs/zerolog"
 	"shared/auth"
 	"shared/config"
@@ -17,7 +22,10 @@ import (
 	"shared/utils"
 )
 
-// Dependencies holds all application dependencies
+// ============================================================================
+// Dependencies Definition
+// ============================================================================
+
 type Dependencies struct {
 	Config *config.Config
 	DB     *sqlx.DB
@@ -28,108 +36,82 @@ type Dependencies struct {
 	UserRepo  *repository.UserRepository
 	TokenRepo *repository.TokenRepository
 
+	// Managers
+	JWTManager  *auth.TokenManager // ✅ Field Name is JWTManager
+	TOTPManager *auth.TOTPManager
+	SessionMgr  *auth.SessionManager
+
 	// Services
-	JWTManager   *auth.Manager
-	TOTPManager  *auth.TOTPManager
-	SessionMgr   *auth.SessionManager
+	AuthService *services.AuthService
+	UserService *services.UserService
 	EmailService *utils.EmailService
-	AuthService  *services.AuthService
-	UserService  *services.UserService
 
 	// Handlers
 	AuthHandler *handlers.AuthHandler
 	UserHandler *handlers.UserHandler
 }
 
-// InitDependencies initializes all application dependencies
-func InitDependencies() (*Dependencies, error) {
-	// Load configuration
-	cfg, err := config.Load()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
-	}
+// ============================================================================
+// Initialization
+// ============================================================================
 
-	// Initialize logger
-	logger := zerolog.New(zerolog.ConsoleWriter{Out: log.Writer()}).
-		With().
-		Timestamp().
-		Logger()
+func InitDependencies() (*Dependencies, error) {
+	output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+	logger := zerolog.New(output).With().Timestamp().Logger()
 
 	logger.Info().Msg("🚀 Initializing dependencies...")
 
-	// Connect to database
-	db, err := models.Connect(&cfg.Database)
+	// 1. Config
+	cfg, err := config.Load()
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
+		return nil, fmt.Errorf("config load error: %w", err)
 	}
 
-	// Wrap with sqlx
-	sqlxDB := sqlx.NewDb(db.DB, "postgres")
-
+	// 2. Database
+	rawDB, err := models.Connect(&cfg.Database)
+	if err != nil {
+		return nil, fmt.Errorf("db connection error: %w", err)
+	}
+	db := sqlx.NewDb(rawDB.DB, "postgres")
 	logger.Info().Msg("✅ Database connected")
 
-	// Connect to Redis
-	redis, err := redisClient.Connect(&cfg.Redis)
+	// 3. Redis
+	redis, err := redisClient.Connect(&cfg.Redis, logger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to redis: %w", err)
+		return nil, fmt.Errorf("redis connection error: %w", err)
 	}
 
-	logger.Info().Msg("✅ Redis connected")
-
-	// Initialize JWT Manager
-	jwtManager := auth.NewManager(&cfg.JWT)
-	logger.Info().Msg("✅ JWT Manager initialized")
-
-	// Initialize TOTP Manager
+	// 4. Managers
+	jwtManager := auth.NewTokenManager(&cfg.JWT)
 	totpManager, err := auth.NewTOTPManager(&cfg.TOTP)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize TOTP manager: %w", err)
+		return nil, err
 	}
-	logger.Info().Msg("✅ TOTP Manager initialized")
+	sessionMgr := auth.NewSessionManager(redis.Client) // Pass raw client
 
-	// Initialize Session Manager
-	sessionMgr := auth.NewSessionManager(redis.Client)
-	logger.Info().Msg("✅ Session Manager initialized")
-
-	// Initialize Email Service
+	// 5. External Services
 	emailService, err := utils.NewEmailService(&cfg.AWS, logger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize email service: %w", err)
+		return nil, err
 	}
-	logger.Info().Msg("✅ Email Service initialized")
 
-	// Initialize Repositories
-	userRepo := repository.NewUserRepository(sqlxDB)
-	tokenRepo := repository.NewTokenRepository(redis)
-	logger.Info().Msg("✅ Repositories initialized")
+	// 6. Repositories
+	userRepo := repository.NewUserRepository(db)
+	tokenRepo := repository.NewTokenRepository(redis.Client) // Pass raw client
 
-	// Initialize Services
+	// 7. Services
 	authService := services.NewAuthService(
-		userRepo,
-		tokenRepo,
-		jwtManager,
-		totpManager,
-		sessionMgr,
-		emailService,
-		cfg,
+		userRepo, tokenRepo, jwtManager, totpManager, sessionMgr, emailService, cfg, logger,
 	)
-	logger.Info().Msg("✅ Services initialized")
-
 	userService := services.NewUserService(userRepo)
-	logger.Info().Msg("✅ Services initialized")
 
-	// Initialize Handlers
+	// 8. Handlers
 	authHandler := handlers.NewAuthHandler(authService)
-	logger.Info().Msg("✅ Handlers initialized")
-
 	userHandler := handlers.NewUserHandler(userService)
-	logger.Info().Msg("✅ Handlers initialized")
-
-	logger.Info().Msg("✅ All dependencies initialized successfully")
 
 	return &Dependencies{
 		Config:       cfg,
-		DB:           sqlxDB,
+		DB:           db,
 		Redis:        redis,
 		Logger:       logger,
 		UserRepo:     userRepo,
@@ -145,26 +127,93 @@ func InitDependencies() (*Dependencies, error) {
 	}, nil
 }
 
-// Cleanup gracefully closes all connections
+// ✅ FIXED: Cleanup now returns error to match main.go usage
 func (d *Dependencies) Cleanup() error {
 	d.Logger.Info().Msg("🔌 Cleaning up resources...")
-
-	if d.DB != nil {
-		if err := d.DB.Close(); err != nil {
-			d.Logger.Error().Err(err).Msg("Failed to close database")
-			return err
-		}
-		d.Logger.Info().Msg("✅ Database closed")
-	}
+	var err error
 
 	if d.Redis != nil {
-		if err := d.Redis.Close(); err != nil {
-			d.Logger.Error().Err(err).Msg("Failed to close Redis")
-			return err
+		if e := d.Redis.Close(); e != nil {
+			d.Logger.Error().Err(e).Msg("Error closing Redis")
+			err = e
+		} else {
+			d.Logger.Info().Msg("✅ Redis closed")
 		}
-		d.Logger.Info().Msg("✅ Redis closed")
 	}
 
-	d.Logger.Info().Msg("✅ Cleanup completed")
-	return nil
+	if d.DB != nil {
+		if e := d.DB.Close(); e != nil {
+			d.Logger.Error().Err(e).Msg("Error closing Database")
+			err = e
+		} else {
+			d.Logger.Info().Msg("✅ Database closed")
+		}
+	}
+
+	return err
+}
+
+// ============================================================================
+// Main Entry Point
+// ============================================================================
+
+func main() {
+	// Initialize
+	deps, err := InitDependencies()
+	if err != nil {
+		// Use standard log here because deps might be nil
+		fmt.Printf("❌ Failed to initialize dependencies: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Cleanup on exit
+	defer func() {
+		if err := deps.Cleanup(); err != nil {
+			deps.Logger.Error().Err(err).Msg("Cleanup finished with errors")
+		}
+	}()
+
+	// Fiber App
+	app := fiber.New(fiber.Config{
+		AppName:               "Upnixo Auth Server",
+		DisableStartupMessage: true,
+		ErrorHandler:          customErrorHandler,
+		BodyLimit:             4 * 1024 * 1024, // 4MB
+	})
+
+	// Setup Routes
+	SetupRoutes(app, deps)
+
+	// Start Server
+	port := deps.Config.App.Port
+	deps.Logger.Info().Str("port", port).Msg("🚀 Starting server...")
+
+	go func() {
+		if err := app.Listen(":" + port); err != nil {
+			deps.Logger.Fatal().Err(err).Msg("Server startup failed")
+		}
+	}()
+
+	// Graceful Shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+
+	deps.Logger.Info().Msg("🛑 Shutting down server...")
+	if err := app.Shutdown(); err != nil {
+		deps.Logger.Error().Err(err).Msg("Server forced to shutdown")
+	}
+
+	deps.Logger.Info().Msg("✅ Server stopped gracefully")
+}
+
+func customErrorHandler(c *fiber.Ctx, err error) error {
+	code := fiber.StatusInternalServerError
+	if e, ok := err.(*fiber.Error); ok {
+		code = e.Code
+	}
+	return c.Status(code).JSON(fiber.Map{
+		"success": false,
+		"error":   err.Error(),
+	})
 }

@@ -50,3 +50,56 @@ html {
   -webkit-text-size-adjust: 100%;
   -ms-text-size-adjust: 100%;
 }
+
+/* ===============================
+   Sonner Toast Theme (Auto Mode)
+   =============================== */
+
+/* Default (Dark Mode) */
+[data-sonner-toast] {
+  border-radius: 18px !important;
+
+  background: #1a1a1a !important;
+  color: #f1f1f1 !important;
+
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+
+  box-shadow: none !important;
+}
+
+/* Light Mode */
+@media (prefers-color-scheme: light) {
+  [data-sonner-toast] {
+    background: #ffffff !important;
+    color: #111111 !important;
+
+    border: 1px solid rgba(0, 0, 0, 0.12) !important;
+
+    box-shadow: none !important;
+  }
+}
+
+/* Success */
+[data-sonner-toast][data-type="success"] svg {
+  color: #22c55e !important; /* Tailwind green-500 */
+}
+
+/* Error */
+[data-sonner-toast][data-type="error"] svg {
+  color: #ef4444 !important; /* Tailwind red-500 */
+}
+
+/* Warning */
+[data-sonner-toast][data-type="warning"] svg {
+  color: #eab308 !important;
+}
+
+/* Info */
+[data-sonner-toast][data-type="info"] svg {
+  color: #3b82f6 !important;
+}
+
+/* Inner Elements */
+[data-sonner-toast] * {
+  border-radius: inherit;
+}

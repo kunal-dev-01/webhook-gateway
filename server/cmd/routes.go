@@ -59,7 +59,7 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 	api := app.Group("/api/v1")
 
 	// Auth middleware
-	authMiddleware := middleware.NewAuthMiddleware(deps.JWTManager, deps.Redis)
+	authMiddleware := middleware.NewAuthMiddleware(deps.JWTManager, deps.Redis.Client)
 
 	// Rate limiter
 	rateLimiter := middleware.NewRateLimiter(deps.Redis)

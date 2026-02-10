@@ -2,11 +2,27 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"shared/redis"
+	"github.com/redis/go-redis/v9"
+)
+
+// Common Errors
+var (
+	ErrTokenNotFound = errors.New("token not found or expired")
+)
+
+// Key Prefixes (Centralized Management)
+const (
+	PrefixVerifyEmail   = "verify:email"
+	PrefixResetPass     = "reset:pass"
+	Prefix2FATemp       = "2fa:temp"
+	Prefix2FASetup      = "2fa:setup"
+	PrefixRecoveryUsed  = "2fa:recovery:used"
+	PrefixRateLimit     = "ratelimit"
 )
 
 // TokenRepository handles token storage in Redis
@@ -22,253 +38,180 @@ func NewTokenRepository(redisClient *redis.Client) *TokenRepository {
 }
 
 // ============================================================================
+// Internal Key Helpers (Prevents Typos)
+// ============================================================================
+
+func keyVerifyEmail(token string) string {
+	return fmt.Sprintf("%s:%s", PrefixVerifyEmail, token)
+}
+
+func keyResetPass(token string) string {
+	return fmt.Sprintf("%s:%s", PrefixResetPass, token)
+}
+
+func key2FATemp(token string) string {
+	return fmt.Sprintf("%s:%s", Prefix2FATemp, token)
+}
+
+func key2FASetup(userID string) string {
+	return fmt.Sprintf("%s:%s", Prefix2FASetup, userID)
+}
+
+func keyRecoveryUsed(userID string, idx int) string {
+	return fmt.Sprintf("%s:%s:%d", PrefixRecoveryUsed, userID, idx)
+}
+
+// ============================================================================
 // Email Verification Tokens
 // ============================================================================
 
-// StoreVerificationToken stores email verification token
 func (r *TokenRepository) StoreVerificationToken(ctx context.Context, userID uuid.UUID, token string, ttl time.Duration) error {
-	key := fmt.Sprintf("verify:email:%s", token)
-
-	if err := r.redis.Set(ctx, key, userID.String(), ttl).Err(); err != nil {
-		return fmt.Errorf("failed to store verification token: %w", err)
-	}
-
-	return nil
+	return r.redis.Set(ctx, keyVerifyEmail(token), userID.String(), ttl).Err()
 }
 
-// GetVerificationToken retrieves user ID from verification token
 func (r *TokenRepository) GetVerificationToken(ctx context.Context, token string) (uuid.UUID, error) {
-	key := fmt.Sprintf("verify:email:%s", token)
-
-	userIDStr, err := r.redis.Get(ctx, key).Result()
+	val, err := r.redis.Get(ctx, keyVerifyEmail(token)).Result()
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("invalid or expired verification token")
+		if errors.Is(err, redis.Nil) {
+			return uuid.Nil, ErrTokenNotFound
+		}
+		return uuid.Nil, err
 	}
-
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("invalid user ID in token")
-	}
-
-	return userID, nil
+	return uuid.Parse(val)
 }
 
-// DeleteVerificationToken removes verification token
 func (r *TokenRepository) DeleteVerificationToken(ctx context.Context, token string) error {
-	key := fmt.Sprintf("verify:email:%s", token)
-	return r.redis.Del(ctx, key).Err()
+	// Unlink is non-blocking (faster than Del for large keys, mostly same for small)
+	return r.redis.Unlink(ctx, keyVerifyEmail(token)).Err()
 }
 
 // ============================================================================
 // Password Reset Tokens
 // ============================================================================
 
-// StoreResetToken stores password reset token
 func (r *TokenRepository) StoreResetToken(ctx context.Context, userID uuid.UUID, token string, ttl time.Duration) error {
-	key := fmt.Sprintf("reset:password:%s", token)
-
-	if err := r.redis.Set(ctx, key, userID.String(), ttl).Err(); err != nil {
-		return fmt.Errorf("failed to store reset token: %w", err)
-	}
-
-	return nil
+	return r.redis.Set(ctx, keyResetPass(token), userID.String(), ttl).Err()
 }
 
-// GetResetToken retrieves user ID from reset token
 func (r *TokenRepository) GetResetToken(ctx context.Context, token string) (uuid.UUID, error) {
-	key := fmt.Sprintf("reset:password:%s", token)
-
-	userIDStr, err := r.redis.Get(ctx, key).Result()
+	val, err := r.redis.Get(ctx, keyResetPass(token)).Result()
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("invalid or expired reset token")
+		if errors.Is(err, redis.Nil) {
+			return uuid.Nil, ErrTokenNotFound
+		}
+		return uuid.Nil, err
 	}
-
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("invalid user ID in token")
-	}
-
-	return userID, nil
+	return uuid.Parse(val)
 }
 
-// DeleteResetToken removes reset token
 func (r *TokenRepository) DeleteResetToken(ctx context.Context, token string) error {
-	key := fmt.Sprintf("reset:password:%s", token)
-	return r.redis.Del(ctx, key).Err()
+	return r.redis.Unlink(ctx, keyResetPass(token)).Err()
 }
 
 // ============================================================================
-// 2FA Temporary Tokens (during login) - OPTIMIZED
+// 2FA Temporary Tokens (Login Flow)
 // ============================================================================
 
-// Store2FATempToken stores temporary token for 2FA verification during login
 func (r *TokenRepository) Store2FATempToken(ctx context.Context, userID uuid.UUID, token string, ttl time.Duration) error {
-	key := fmt.Sprintf("2fa:temp:%s", token)
-
-	if err := r.redis.Set(ctx, key, userID.String(), ttl).Err(); err != nil {
-		return fmt.Errorf("failed to store 2FA temp token: %w", err)
-	}
-
-	return nil
+	return r.redis.Set(ctx, key2FATemp(token), userID.String(), ttl).Err()
 }
 
-// Get2FATempToken retrieves user ID from 2FA temp token
 func (r *TokenRepository) Get2FATempToken(ctx context.Context, token string) (uuid.UUID, error) {
-	key := fmt.Sprintf("2fa:temp:%s", token)
-
-	userIDStr, err := r.redis.Get(ctx, key).Result()
+	val, err := r.redis.Get(ctx, key2FATemp(token)).Result()
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("invalid or expired 2FA token")
+		if errors.Is(err, redis.Nil) {
+			return uuid.Nil, ErrTokenNotFound
+		}
+		return uuid.Nil, err
 	}
-
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("invalid user ID in token")
-	}
-
-	return userID, nil
+	return uuid.Parse(val)
 }
 
-// ============================================================================
-// 2FA Setup State (Temporary Secret Storage)
-// ============================================================================
-
-// Store2FASetupSecret stores the TOTP secret temporarily while user scans QR code
-func (r *TokenRepository) Store2FASetupSecret(ctx context.Context, userID uuid.UUID, secret string, ttl time.Duration) error {
-    key := fmt.Sprintf("2fa:setup:%s", userID.String())
-    
-    // Store secret in Redis (expires in 10-15 mins)
-    if err := r.redis.Set(ctx, key, secret, ttl).Err(); err != nil {
-        return fmt.Errorf("failed to store 2fa setup secret: %w", err)
-    }
-    return nil
-}
-
-// Get2FASetupSecret retrieves the temporary secret to verify the code
-func (r *TokenRepository) Get2FASetupSecret(ctx context.Context, userID uuid.UUID) (string, error) {
-    key := fmt.Sprintf("2fa:setup:%s", userID.String())
-    
-    secret, err := r.redis.Get(ctx, key).Result()
-    if err != nil {
-        return "", fmt.Errorf("setup session expired or invalid")
-    }
-    return secret, nil
-}
-
-// Delete2FASetupSecret removes the temporary secret after successful enablement
-func (r *TokenRepository) Delete2FASetupSecret(ctx context.Context, userID uuid.UUID) error {
-    key := fmt.Sprintf("2fa:setup:%s", userID.String())
-    return r.redis.Del(ctx, key).Err()
-}
-
-// ... (Keep your existing methods for Email, Password Reset, etc.) ...
-
-// Delete2FATempToken removes 2FA temp token
 func (r *TokenRepository) Delete2FATempToken(ctx context.Context, token string) error {
-	key := fmt.Sprintf("2fa:temp:%s", token)
-	return r.redis.Del(ctx, key).Err()
+	return r.redis.Unlink(ctx, key2FATemp(token)).Err()
 }
 
 // ============================================================================
-// Recovery Code Tracking - NEW
+// 2FA Setup State (Secret Storage)
 // ============================================================================
 
-// ✅ NEW: MarkRecoveryCodeUsed marks a recovery code as used (prevent reuse)
-func (r *TokenRepository) MarkRecoveryCodeUsed(ctx context.Context, userID uuid.UUID, codeIndex int, ttl time.Duration) error {
-	key := fmt.Sprintf("2fa:recovery:used:%s:%d", userID.String(), codeIndex)
-
-	if err := r.redis.Set(ctx, key, "1", ttl).Err(); err != nil {
-		return fmt.Errorf("failed to mark recovery code as used: %w", err)
-	}
-
-	return nil
+func (r *TokenRepository) Store2FASetupSecret(ctx context.Context, userID uuid.UUID, secret string, ttl time.Duration) error {
+	return r.redis.Set(ctx, key2FASetup(userID.String()), secret, ttl).Err()
 }
 
-// ✅ NEW: IsRecoveryCodeUsed checks if recovery code has been used
-func (r *TokenRepository) IsRecoveryCodeUsed(ctx context.Context, userID uuid.UUID, codeIndex int) (bool, error) {
-	key := fmt.Sprintf("2fa:recovery:used:%s:%d", userID.String(), codeIndex)
-
-	exists, err := r.redis.Exists(ctx, key).Result()
+func (r *TokenRepository) Get2FASetupSecret(ctx context.Context, userID uuid.UUID) (string, error) {
+	val, err := r.redis.Get(ctx, key2FASetup(userID.String())).Result()
 	if err != nil {
-		return false, fmt.Errorf("failed to check recovery code usage: %w", err)
+		if errors.Is(err, redis.Nil) {
+			return "", ErrTokenNotFound
+		}
+		return "", err
 	}
+	return val, nil
+}
 
+func (r *TokenRepository) Delete2FASetupSecret(ctx context.Context, userID uuid.UUID) error {
+	return r.redis.Unlink(ctx, key2FASetup(userID.String())).Err()
+}
+
+// ============================================================================
+// Recovery Code Tracking
+// ============================================================================
+
+func (r *TokenRepository) MarkRecoveryCodeUsed(ctx context.Context, userID uuid.UUID, codeIndex int, ttl time.Duration) error {
+	// Set "1" to mark as used
+	return r.redis.Set(ctx, keyRecoveryUsed(userID.String(), codeIndex), "1", ttl).Err()
+}
+
+func (r *TokenRepository) IsRecoveryCodeUsed(ctx context.Context, userID uuid.UUID, codeIndex int) (bool, error) {
+	exists, err := r.redis.Exists(ctx, keyRecoveryUsed(userID.String(), codeIndex)).Result()
+	if err != nil {
+		return false, err
+	}
 	return exists > 0, nil
 }
 
 // ============================================================================
-// Rate Limiting Helpers - OPTIMIZED
+// Rate Limiting (Optimized with Pipeline)
 // ============================================================================
 
-// CheckEmailRateLimit checks if email sending is rate limited
+// CheckEmailRateLimit checks limit by Email
 func (r *TokenRepository) CheckEmailRateLimit(ctx context.Context, email string, maxAttempts int, window time.Duration) (bool, error) {
-	key := fmt.Sprintf("ratelimit:email:%s", email)
-
-	count, err := r.redis.IncrWithExpiry(ctx, key, window)
-	if err != nil {
-		return false, err
-	}
-
-	return count > int64(maxAttempts), nil
+	key := fmt.Sprintf("%s:email:%s", PrefixRateLimit, email)
+	return r.checkRateLimit(ctx, key, maxAttempts, window)
 }
 
-// CheckLoginRateLimit checks if login attempts are rate limited
+// CheckLoginRateLimit checks limit by IP
 func (r *TokenRepository) CheckLoginRateLimit(ctx context.Context, ip string, maxAttempts int, window time.Duration) (bool, error) {
-	key := fmt.Sprintf("ratelimit:login:%s", ip)
-
-	count, err := r.redis.IncrWithExpiry(ctx, key, window)
-	if err != nil {
-		return false, err
-	}
-
-	return count > int64(maxAttempts), nil
+	key := fmt.Sprintf("%s:login:%s", PrefixRateLimit, ip)
+	return r.checkRateLimit(ctx, key, maxAttempts, window)
 }
 
-// ✅ NEW: Check2FARateLimit checks if 2FA attempts are rate limited (prevent brute force)
+// Check2FARateLimit checks limit by UserID
 func (r *TokenRepository) Check2FARateLimit(ctx context.Context, userID uuid.UUID, maxAttempts int, window time.Duration) (bool, error) {
-	key := fmt.Sprintf("ratelimit:2fa:%s", userID.String())
-
-	count, err := r.redis.IncrWithExpiry(ctx, key, window)
-	if err != nil {
-		return false, err
-	}
-
-	return count > int64(maxAttempts), nil
+	key := fmt.Sprintf("%s:2fa:%s", PrefixRateLimit, userID.String())
+	return r.checkRateLimit(ctx, key, maxAttempts, window)
 }
 
-// ✅ NEW: Reset2FARateLimit resets 2FA rate limit after successful auth
+// Reset2FARateLimit clears the counter
 func (r *TokenRepository) Reset2FARateLimit(ctx context.Context, userID uuid.UUID) error {
-	key := fmt.Sprintf("ratelimit:2fa:%s", userID.String())
-	return r.redis.Del(ctx, key).Err()
+	key := fmt.Sprintf("%s:2fa:%s", PrefixRateLimit, userID.String())
+	return r.redis.Unlink(ctx, key).Err()
 }
 
-// ============================================================================
-// Cleanup Helpers - OPTIMIZED WITH PIPELINE
-// ============================================================================
-
-// ✅ NEW: CleanupExpiredTokens removes all expired tokens for a user
-func (r *TokenRepository) CleanupExpiredTokens(ctx context.Context, userID uuid.UUID) error {
-	// ✅ OPTIMIZED: Use pipeline for batch delete
+// Internal Helper: Atomic Rate Limiting
+func (r *TokenRepository) checkRateLimit(ctx context.Context, key string, limit int, window time.Duration) (bool, error) {
+	// Optimized: Use Pipeline to save network RTT
 	pipe := r.redis.Pipeline()
-
-	// Pattern matching for user's tokens
-	patterns := []string{
-		fmt.Sprintf("verify:email:*:%s", userID.String()),
-		fmt.Sprintf("reset:password:*:%s", userID.String()),
-		fmt.Sprintf("2fa:temp:*:%s", userID.String()),
-	}
-
-	for _, pattern := range patterns {
-		keys, err := r.redis.Keys(ctx, pattern).Result()
-		if err != nil {
-			continue
-		}
-
-		for _, key := range keys {
-			pipe.Del(ctx, key)
-		}
-	}
-
+	
+	incr := pipe.Incr(ctx, key)
+	pipe.Expire(ctx, key, window)
+	
 	_, err := pipe.Exec(ctx)
-	return err
+	if err != nil {
+		return false, fmt.Errorf("redis rate limit error: %w", err)
+	}
+
+	// Logic: If current count > limit, block it
+	return incr.Val() > int64(limit), nil
 }
