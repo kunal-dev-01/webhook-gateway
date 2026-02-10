@@ -80,16 +80,44 @@ func (r *UserRepository) getUserFromCache(ctx context.Context, id uuid.UUID) (*m
 	return &user, true
 }
 
+// ✅ FIXED: Invalidate BOTH ID and email cache
 func (r *UserRepository) invalidateUserCache(ctx context.Context, user *models.User) {
 	if user == nil {
 		return
 	}
 
-	// ✅ OPTIMIZED: Use pipeline for batch delete
 	pipe := r.redis.Pipeline()
 	pipe.Del(ctx, r.getUserCacheKey(user.ID))
 	pipe.Del(ctx, r.getUserEmailCacheKey(user.Email))
 	pipe.Exec(ctx)
+}
+
+// ✅ NEW: Invalidate cache by ID only (when we don't have full user object)
+func (r *UserRepository) invalidateUserCacheByID(ctx context.Context, userID uuid.UUID) {
+	// We only have ID, so we can only invalidate ID cache
+	// Email cache will expire naturally
+	r.redis.Del(ctx, r.getUserCacheKey(userID))
+}
+
+// ✅ NEW: Invalidate cache by email only
+func (r *UserRepository) invalidateUserCacheByEmail(ctx context.Context, email string) {
+	email = strings.ToLower(email)
+	
+	// Try to get user ID from email cache first
+	userIDStr, err := r.redis.Get(ctx, r.getUserEmailCacheKey(email)).Result()
+	if err == nil {
+		if userID, parseErr := uuid.Parse(userIDStr); parseErr == nil {
+			// We have the ID, invalidate both caches
+			pipe := r.redis.Pipeline()
+			pipe.Del(ctx, r.getUserCacheKey(userID))
+			pipe.Del(ctx, r.getUserEmailCacheKey(email))
+			pipe.Exec(ctx)
+			return
+		}
+	}
+	
+	// Couldn't get ID, just invalidate email cache
+	r.redis.Del(ctx, r.getUserEmailCacheKey(email))
 }
 
 // ============================================================================
@@ -148,7 +176,7 @@ func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 		return fmt.Errorf("failed to create user: %w", err)
 	}
 
-	// ✅ Cache the new user
+	// Cache the new user
 	r.cacheUser(ctx, user)
 
 	return nil
@@ -160,7 +188,7 @@ func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 
 // GetByID retrieves a user by ID - OPTIMIZED
 func (r *UserRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
-	// ✅ 1. Check cache first (90% cache hit rate)
+	// ✅ 1. Check cache first
 	if user, found := r.getUserFromCache(ctx, id); found {
 		return user, nil
 	}
@@ -328,7 +356,7 @@ func (r *UserRepository) List(ctx context.Context, filters ListUsersFilter) ([]*
 }
 
 // ============================================================================
-// Update Operations - CACHE INVALIDATION
+// Update Operations - FIXED CACHE INVALIDATION ✅
 // ============================================================================
 
 // Update updates a user - INVALIDATES CACHE
@@ -393,7 +421,7 @@ func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
 	return nil
 }
 
-// UpdatePassword updates user's password - INVALIDATES CACHE
+// ✅ FIXED: UpdatePassword - Proper cache invalidation
 func (r *UserRepository) UpdatePassword(ctx context.Context, userID uuid.UUID, passwordHash string) error {
 	query := `
 		UPDATE users SET
@@ -402,30 +430,31 @@ func (r *UserRepository) UpdatePassword(ctx context.Context, userID uuid.UUID, p
 			must_change_password = false,
 			updated_at = $3
 		WHERE id = $1 AND deleted_at IS NULL
+		RETURNING email
 	`
 
 	now := time.Now()
-	result, err := r.db.ExecContext(ctx, query, userID, passwordHash, now)
+	
+	// ✅ Get email so we can invalidate both caches
+	var email string
+	err := r.db.QueryRowContext(ctx, query, userID, passwordHash, now).Scan(&email)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("user not found")
+		}
 		return fmt.Errorf("failed to update password: %w", err)
 	}
 
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rows == 0 {
-		return fmt.Errorf("user not found")
-	}
-
-	// ✅ Invalidate cache
-	r.redis.Del(ctx, r.getUserCacheKey(userID))
+	// ✅ Invalidate BOTH caches
+	pipe := r.redis.Pipeline()
+	pipe.Del(ctx, r.getUserCacheKey(userID))
+	pipe.Del(ctx, r.getUserEmailCacheKey(email))
+	pipe.Exec(ctx)
 
 	return nil
 }
 
-// UpdateLastLogin updates user's last login info
+// ✅ FIXED: UpdateLastLogin - Proper cache invalidation
 func (r *UserRepository) UpdateLastLogin(ctx context.Context, userID uuid.UUID, ip string) error {
 	query := `
 		UPDATE users SET
@@ -439,31 +468,34 @@ func (r *UserRepository) UpdateLastLogin(ctx context.Context, userID uuid.UUID, 
 			END,
 			updated_at = $2
 		WHERE id = $1 AND deleted_at IS NULL
+		RETURNING email
 	`
 
 	now := time.Now()
-	result, err := r.db.ExecContext(ctx, query, userID, now, ip)
+	
+	// ✅ Get email so we can invalidate both caches
+	var email string
+	err := r.db.QueryRowContext(ctx, query, userID, now, ip).Scan(&email)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("user not found")
+		}
 		return fmt.Errorf("failed to update last login: %w", err)
 	}
 
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rows == 0 {
-		return fmt.Errorf("user not found")
-	}
-
-	// ✅ Invalidate cache
-	r.redis.Del(ctx, r.getUserCacheKey(userID))
+	// ✅ Invalidate BOTH caches
+	pipe := r.redis.Pipeline()
+	pipe.Del(ctx, r.getUserCacheKey(userID))
+	pipe.Del(ctx, r.getUserEmailCacheKey(email))
+	pipe.Exec(ctx)
 
 	return nil
 }
 
-// IncrementFailedAttempts increments failed login attempts
+// ✅ FIXED: IncrementFailedAttempts - Proper cache invalidation
 func (r *UserRepository) IncrementFailedAttempts(ctx context.Context, email string) error {
+	email = strings.ToLower(email)
+	
 	query := `
 		UPDATE users SET
 			failed_login_attempts = failed_login_attempts + 1,
@@ -477,29 +509,29 @@ func (r *UserRepository) IncrementFailedAttempts(ctx context.Context, email stri
 			END,
 			updated_at = NOW()
 		WHERE email = $1 AND deleted_at IS NULL
+		RETURNING id
 	`
 
-	result, err := r.db.ExecContext(ctx, query, strings.ToLower(email))
+	// ✅ Get user ID so we can invalidate both caches
+	var userID uuid.UUID
+	err := r.db.QueryRowContext(ctx, query, email).Scan(&userID)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("user not found")
+		}
 		return fmt.Errorf("failed to increment failed attempts: %w", err)
 	}
 
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rows == 0 {
-		return fmt.Errorf("user not found")
-	}
-
-	// ✅ Invalidate email cache
-	r.redis.Del(ctx, r.getUserEmailCacheKey(email))
+	// ✅ Invalidate BOTH caches (ID and email)
+	pipe := r.redis.Pipeline()
+	pipe.Del(ctx, r.getUserCacheKey(userID))
+	pipe.Del(ctx, r.getUserEmailCacheKey(email))
+	pipe.Exec(ctx)
 
 	return nil
 }
 
-// MarkEmailAsVerified marks email as verified
+// ✅ FIXED: MarkEmailAsVerified - Proper cache invalidation
 func (r *UserRepository) MarkEmailAsVerified(ctx context.Context, userID uuid.UUID) error {
 	query := `
 		UPDATE users SET
@@ -507,25 +539,26 @@ func (r *UserRepository) MarkEmailAsVerified(ctx context.Context, userID uuid.UU
 			email_verified_at = $2,
 			updated_at = $2
 		WHERE id = $1 AND deleted_at IS NULL
+		RETURNING email
 	`
 
 	now := time.Now()
-	result, err := r.db.ExecContext(ctx, query, userID, now)
+	
+	// ✅ Get email so we can invalidate both caches
+	var email string
+	err := r.db.QueryRowContext(ctx, query, userID, now).Scan(&email)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("user not found")
+		}
 		return fmt.Errorf("failed to mark email as verified: %w", err)
 	}
 
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rows == 0 {
-		return fmt.Errorf("user not found")
-	}
-
-	// ✅ Invalidate cache
-	r.redis.Del(ctx, r.getUserCacheKey(userID))
+	// ✅ Invalidate BOTH caches
+	pipe := r.redis.Pipeline()
+	pipe.Del(ctx, r.getUserCacheKey(userID))
+	pipe.Del(ctx, r.getUserEmailCacheKey(email))
+	pipe.Exec(ctx)
 
 	return nil
 }
@@ -543,25 +576,25 @@ func (r *UserRepository) SoftDelete(ctx context.Context, userID uuid.UUID) error
 			email = email || '.deleted.' || EXTRACT(EPOCH FROM $2)::TEXT,
 			updated_at = $2
 		WHERE id = $1 AND deleted_at IS NULL
+		RETURNING email
 	`
 
 	now := time.Now()
-	result, err := r.db.ExecContext(ctx, query, userID, now)
+	
+	var oldEmail string
+	err := r.db.QueryRowContext(ctx, query, userID, now).Scan(&oldEmail)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("user not found or already deleted")
+		}
 		return fmt.Errorf("failed to soft delete user: %w", err)
 	}
 
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rows == 0 {
-		return fmt.Errorf("user not found or already deleted")
-	}
-
-	// ✅ Invalidate cache
-	r.redis.Del(ctx, r.getUserCacheKey(userID))
+	// ✅ Invalidate both caches (use old email before it was modified)
+	pipe := r.redis.Pipeline()
+	pipe.Del(ctx, r.getUserCacheKey(userID))
+	pipe.Del(ctx, r.getUserEmailCacheKey(oldEmail))
+	pipe.Exec(ctx)
 
 	return nil
 }
@@ -575,29 +608,37 @@ func (r *UserRepository) Restore(ctx context.Context, userID uuid.UUID) error {
 			email = REGEXP_REPLACE(email, '\.deleted\.\d+$', ''),
 			updated_at = $2
 		WHERE id = $1 AND deleted_at IS NOT NULL
+		RETURNING email
 	`
 
 	now := time.Now()
-	result, err := r.db.ExecContext(ctx, query, userID, now)
+	
+	var email string
+	err := r.db.QueryRowContext(ctx, query, userID, now).Scan(&email)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("user not found or not deleted")
+		}
 		return fmt.Errorf("failed to restore user: %w", err)
 	}
 
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
+	// ✅ Invalidate both caches
+	pipe := r.redis.Pipeline()
+	pipe.Del(ctx, r.getUserCacheKey(userID))
+	pipe.Del(ctx, r.getUserEmailCacheKey(email))
+	pipe.Exec(ctx)
 
-	if rows == 0 {
-		return fmt.Errorf("user not found or not deleted")
-	}
-
-	// Cache already invalidated (user was deleted)
 	return nil
 }
 
 // HardDelete permanently deletes a user (use with caution)
 func (r *UserRepository) HardDelete(ctx context.Context, userID uuid.UUID) error {
+	// ✅ First get user to invalidate email cache
+	user, err := r.GetByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("user not found")
+	}
+
 	query := `DELETE FROM users WHERE id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, userID)
@@ -614,8 +655,8 @@ func (r *UserRepository) HardDelete(ctx context.Context, userID uuid.UUID) error
 		return fmt.Errorf("user not found")
 	}
 
-	// ✅ Invalidate cache
-	r.redis.Del(ctx, r.getUserCacheKey(userID))
+	// ✅ Invalidate both caches
+	r.invalidateUserCache(ctx, user)
 
 	return nil
 }
