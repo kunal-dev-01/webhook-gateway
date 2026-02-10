@@ -589,89 +589,103 @@ func (s *AuthService) LogoutAll(ctx context.Context, userID uuid.UUID) error {
 // Two-Factor Authentication
 // ============================================================================
 
-// Setup2FA generates 2FA secret and recovery codes
+// Setup2FA generates secret and stores it in Redis temporarily
 func (s *AuthService) Setup2FA(ctx context.Context, userID uuid.UUID) (*dto.Setup2FAResponse, error) {
-	// Get user
-	user, err := s.userRepo.GetByID(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("user not found")
-	}
+    // 1. Get user
+    user, err := s.userRepo.GetByID(ctx, userID)
+    if err != nil {
+        return nil, fmt.Errorf("user not found")
+    }
 
-	if user.TwoFactorEnabled {
-		return nil, fmt.Errorf("2FA is already enabled")
-	}
+    if user.TwoFactorEnabled {
+        return nil, fmt.Errorf("2FA is already enabled")
+    }
 
-	// Generate TOTP secret
-	key, err := s.totpManager.GenerateSecret(user.Email)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate secret: %w", err)
-	}
+    // 2. Generate TOTP secret
+    key, err := s.totpManager.GenerateSecret(user.Email)
+    if err != nil {
+        return nil, fmt.Errorf("failed to generate secret: %w", err)
+    }
 
-	// Generate recovery codes
-	recoveryCodes, err := s.totpManager.GenerateRecoveryCodes(10)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate recovery codes: %w", err)
-	}
+    // 3. STORE SECRET IN REDIS (Valid for 10 minutes)
+    // Yeh step missing tha pehle. Server ko yaad rakhna padega.
+    err = s.tokenRepo.Store2FASetupSecret(ctx, userID, key.Secret(), 10*time.Minute)
+    if err != nil {
+        return nil, fmt.Errorf("failed to save setup state: %w", err)
+    }
 
-	return &dto.Setup2FAResponse{
-		Secret:        key.Secret(),
-		QRCodeURL:     key.URL(),
-		RecoveryCodes: recoveryCodes,
-	}, nil
+    // 4. Return Secret & QR URL (No recovery codes yet)
+    return &dto.Setup2FAResponse{
+        Secret:    key.Secret(),
+        QRCodeURL: key.URL(),
+    }, nil
 }
 
-// Enable2FA verifies code and enables 2FA
-func (s *AuthService) Enable2FA(ctx context.Context, userID uuid.UUID, req *dto.Enable2FARequest, secret string, recoveryCodes []string) error {
-	// Get user
-	user, err := s.userRepo.GetByID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("user not found")
-	}
+// Enable2FA verifies the code against the stored secret and finalizes 2FA
+func (s *AuthService) Enable2FA(ctx context.Context, userID uuid.UUID, req *dto.Enable2FARequest) (*dto.Enable2FAResponse, error) {
+    // 1. Get User
+    user, err := s.userRepo.GetByID(ctx, userID)
+    if err != nil {
+        return nil, fmt.Errorf("user not found")
+    }
 
-	// Validate code
-	if !s.totpManager.ValidateCode(secret, req.Code) {
-		return fmt.Errorf("invalid verification code")
-	}
+    // 2. RETRIEVE SECRET FROM REDIS
+    secret, err := s.tokenRepo.Get2FASetupSecret(ctx, userID)
+    if err != nil {
+        return nil, fmt.Errorf("setup session expired, please try setup again")
+    }
 
-	// Encrypt secret before storing
-	encryptedSecret, err := utils.Encrypt(secret, s.totpManager.GetAESKey())
-	if err != nil {
-		return fmt.Errorf("failed to encrypt secret: %w", err)
-	}
+    // 3. Validate Code
+    if !s.totpManager.ValidateCode(secret, req.Code) {
+        return nil, fmt.Errorf("invalid verification code")
+    }
 
-	// Enable 2FA
-	user.Enable2FA(encryptedSecret, recoveryCodes)
+    // 4. Generate Recovery Codes (Now is the time to generate them)
+    recoveryCodes, err := s.totpManager.GenerateRecoveryCodes(10)
+    if err != nil {
+        return nil, fmt.Errorf("failed to generate recovery codes")
+    }
 
-	// Update user
-	if err := s.userRepo.Update(ctx, user); err != nil {
-		return fmt.Errorf("failed to enable 2FA: %w", err)
-	}
+    // 5. Encrypt Secret for Database
+    encryptedSecret, err := utils.Encrypt(secret, s.totpManager.GetAESKey())
+    if err != nil {
+        return nil, fmt.Errorf("failed to encrypt secret: %w", err)
+    }
 
-	return nil
+    // 6. Update User Model
+    user.Enable2FA(encryptedSecret, recoveryCodes)
+
+    if err := s.userRepo.Update(ctx, user); err != nil {
+        return nil, fmt.Errorf("failed to enable 2FA: %w", err)
+    }
+
+    // 7. Cleanup Redis (Remove the temp secret)
+    _ = s.tokenRepo.Delete2FASetupSecret(ctx, userID)
+
+    return &dto.Enable2FAResponse{
+        Success:       true,
+        Message:       "2FA enabled successfully",
+        RecoveryCodes: recoveryCodes,
+    }, nil
 }
 
-// Disable2FA disables 2FA with password verification
+// Disable2FA remains mostly the same...
 func (s *AuthService) Disable2FA(ctx context.Context, userID uuid.UUID, req *dto.Disable2FARequest) error {
-	// Get user
-	user, err := s.userRepo.GetByID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("user not found")
-	}
+    user, err := s.userRepo.GetByID(ctx, userID)
+    if err != nil {
+        return fmt.Errorf("user not found")
+    }
 
-	// Verify password
-	if !user.CheckPassword(req.Password) {
-		return fmt.Errorf("incorrect password")
-	}
+    if !user.CheckPassword(req.Password) {
+        return fmt.Errorf("incorrect password")
+    }
 
-	// Disable 2FA
-	user.Disable2FA()
+    user.Disable2FA()
 
-	// Update user
-	if err := s.userRepo.Update(ctx, user); err != nil {
-		return fmt.Errorf("failed to disable 2FA: %w", err)
-	}
-
-	return nil
+    if err := s.userRepo.Update(ctx, user); err != nil {
+        return fmt.Errorf("failed to disable 2FA: %w", err)
+    }
+    return nil
 }
 
 // ============================================================================

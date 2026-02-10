@@ -89,12 +89,18 @@ type RefreshTokenResponse struct {
 type Setup2FAResponse struct {
 	Secret        string   `json:"secret"`
 	QRCodeURL     string   `json:"qr_code_url"`
-	RecoveryCodes []string `json:"recovery_codes"`
 }
 
-// Enable2FARequest represents enable 2FA request
+// Enable2FARequest: Client sirf Code bhejega
 type Enable2FARequest struct {
-	Code string `json:"code" validate:"required,len=6"`
+    Code string `json:"code" validate:"required,len=6"`
+}
+
+// Enable2FAResponse: Success hone par Recovery Codes milenge
+type Enable2FAResponse struct {
+    Success       bool     `json:"success"`
+    Message       string   `json:"message"`
+    RecoveryCodes []string `json:"recovery_codes"`
 }
 
 // Verify2FARequest represents 2FA code verification during login

@@ -424,85 +424,62 @@ func (h *AuthHandler) LogoutAll(c *fiber.Ctx) error {
 // Two-Factor Authentication
 // ============================================================================
 
-// Setup2FA handles 2FA setup
-// POST /auth/2fa/setup
+// Setup2FA handles 2FA setup initialization
+// GET/POST /auth/2fa/setup
 func (h *AuthHandler) Setup2FA(c *fiber.Ctx) error {
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(dto.ErrorResponse{
-			Success: false,
-			Error:   "Unauthorized",
-		})
-	}
+    userID, err := middleware.GetUserID(c)
+    if err != nil {
+        return c.Status(fiber.StatusUnauthorized).JSON(dto.ErrorResponse{
+            Success: false, Error: "Unauthorized",
+        })
+    }
 
-	result, err := h.authService.Setup2FA(c.Context(), userID)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(dto.ErrorResponse{
-			Success: false,
-			Error:   err.Error(),
-		})
-	}
+    result, err := h.authService.Setup2FA(c.Context(), userID)
+    if err != nil {
+        return c.Status(fiber.StatusBadRequest).JSON(dto.ErrorResponse{
+            Success: false, Error: err.Error(),
+        })
+    }
 
-	return c.JSON(result)
+    return c.JSON(result)
 }
 
-// Enable2FA handles enabling 2FA
+// Enable2FA handles verifying code and enabling 2FA
 // POST /auth/2fa/enable
 func (h *AuthHandler) Enable2FA(c *fiber.Ctx) error {
-	var req dto.Enable2FARequest
-	
-	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(dto.ErrorResponse{
-			Success: false,
-			Error:   "Invalid request body",
-		})
-	}
+    var req dto.Enable2FARequest
+    
+    // Parse Body
+    if err := c.BodyParser(&req); err != nil {
+        return c.Status(fiber.StatusBadRequest).JSON(dto.ErrorResponse{
+            Success: false, Error: "Invalid request body",
+        })
+    }
 
-	if err := h.validate.Struct(req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(dto.ErrorResponse{
-			Success: false,
-			Error:   err.Error(),
-		})
-	}
+    // Validation
+    if err := h.validate.Struct(req); err != nil {
+        return c.Status(fiber.StatusBadRequest).JSON(dto.ErrorResponse{
+            Success: false, Error: err.Error(),
+        })
+    }
 
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(dto.ErrorResponse{
-			Success: false,
-			Error:   "Unauthorized",
-		})
-	}
+    // Get User ID
+    userID, err := middleware.GetUserID(c)
+    if err != nil {
+        return c.Status(fiber.StatusUnauthorized).JSON(dto.ErrorResponse{
+            Success: false, Error: "Unauthorized",
+        })
+    }
 
-	// Get secret and recovery codes from request or session
-	// For simplicity, we'll require them to be passed in the request
-	// In production, you might want to store them temporarily in Redis
-	secret := c.FormValue("secret")
-	recoveryCodes := c.FormValue("recovery_codes") // Comma-separated
+    // Service Call (Note: We don't pass secret anymore)
+    response, err := h.authService.Enable2FA(c.Context(), userID, &req)
+    if err != nil {
+        return c.Status(fiber.StatusBadRequest).JSON(dto.ErrorResponse{
+            Success: false, Error: err.Error(),
+        })
+    }
 
-	if secret == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(dto.ErrorResponse{
-			Success: false,
-			Error:   "Secret is required",
-		})
-	}
-
-	// Parse recovery codes
-	var codes []string
-	if recoveryCodes != "" {
-		codes = []string{} // Parse from comma-separated string
-	}
-
-	if err := h.authService.Enable2FA(c.Context(), userID, &req, secret, codes); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(dto.ErrorResponse{
-			Success: false,
-			Error:   err.Error(),
-		})
-	}
-
-	return c.JSON(dto.MessageResponse{
-		Success: true,
-		Message: "Two-factor authentication enabled successfully",
-	})
+    return c.JSON(response)
 }
 
 // Disable2FA handles disabling 2FA

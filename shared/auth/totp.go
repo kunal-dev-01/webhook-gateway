@@ -63,11 +63,25 @@ func (t *TOTPManager) GenerateSecret(email string) (*otp.Key, error) {
 // TOTP Validation - CORRECTED ✅
 // ============================================================================
 
-// ValidateCode validates a TOTP code (default skew = 1, allows ±30 seconds)
+// ValidateCode validates a TOTP code with extra tolerance (Skew)
 func (t *TOTPManager) ValidateCode(secret, code string) bool {
-	// ✅ CORRECT: Use totp.Validate with default behavior
-	// Library internally handles skew=1 (±30 seconds)
-	return totp.Validate(code, secret)
+    valid, err := totp.ValidateCustom(
+        code,
+        secret,
+        time.Now().UTC(),
+        totp.ValidateOpts{
+            Period:    30,
+            Skew:      2, // 👈 Ye important hai. Isse tolerance badhti hai.
+            Digits:    otp.DigitsSix,
+            Algorithm: otp.AlgorithmSHA1,
+        },
+    )
+
+    if err != nil {
+        return false
+    }
+
+    return valid
 }
 
 // ValidateCodeWithSkew validates with custom time skew

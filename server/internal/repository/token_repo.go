@@ -129,6 +129,40 @@ func (r *TokenRepository) Get2FATempToken(ctx context.Context, token string) (uu
 	return userID, nil
 }
 
+// ============================================================================
+// 2FA Setup State (Temporary Secret Storage)
+// ============================================================================
+
+// Store2FASetupSecret stores the TOTP secret temporarily while user scans QR code
+func (r *TokenRepository) Store2FASetupSecret(ctx context.Context, userID uuid.UUID, secret string, ttl time.Duration) error {
+    key := fmt.Sprintf("2fa:setup:%s", userID.String())
+    
+    // Store secret in Redis (expires in 10-15 mins)
+    if err := r.redis.Set(ctx, key, secret, ttl).Err(); err != nil {
+        return fmt.Errorf("failed to store 2fa setup secret: %w", err)
+    }
+    return nil
+}
+
+// Get2FASetupSecret retrieves the temporary secret to verify the code
+func (r *TokenRepository) Get2FASetupSecret(ctx context.Context, userID uuid.UUID) (string, error) {
+    key := fmt.Sprintf("2fa:setup:%s", userID.String())
+    
+    secret, err := r.redis.Get(ctx, key).Result()
+    if err != nil {
+        return "", fmt.Errorf("setup session expired or invalid")
+    }
+    return secret, nil
+}
+
+// Delete2FASetupSecret removes the temporary secret after successful enablement
+func (r *TokenRepository) Delete2FASetupSecret(ctx context.Context, userID uuid.UUID) error {
+    key := fmt.Sprintf("2fa:setup:%s", userID.String())
+    return r.redis.Del(ctx, key).Err()
+}
+
+// ... (Keep your existing methods for Email, Password Reset, etc.) ...
+
 // Delete2FATempToken removes 2FA temp token
 func (r *TokenRepository) Delete2FATempToken(ctx context.Context, token string) error {
 	key := fmt.Sprintf("2fa:temp:%s", token)

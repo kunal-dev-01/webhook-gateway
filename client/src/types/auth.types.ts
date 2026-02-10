@@ -56,9 +56,15 @@ export interface RefreshTokenResponse {
 export interface Setup2FAResponse {
   secret: string;
   qr_code_url: string;
-  recovery_codes: string[];
 }
 
+export interface Enable2FAResponse {
+  success: boolean;
+  message: string;
+  recovery_codes: string[]; 
+}
+
+// Keep existing
 export interface Enable2FARequest {
   code: string;
 }
