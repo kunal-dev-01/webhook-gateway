@@ -1,23 +1,81 @@
 package models
 
 import (
+	"database/sql/driver"
+	"encoding/json"
 	"fmt"
-	"regexp"
 	"time"
 
 	"github.com/google/uuid"
+	"shared/utils"
 )
 
-// CompanyStatus represents the status of a company
+// ============================================================================
+// ENUMS
+// ============================================================================
+
 type CompanyStatus string
 
 const (
-	CompanyActive    CompanyStatus = "active"
-	CompanyInactive  CompanyStatus = "inactive"
-	CompanySuspended CompanyStatus = "suspended"
+	CompanyStatusActive    CompanyStatus = "active"
+	CompanyStatusInactive  CompanyStatus = "inactive"
+	CompanyStatusSuspended CompanyStatus = "suspended"
 )
 
-// Company represents a company/organization
+// ============================================================================
+// COMPANY SETTINGS
+// ============================================================================
+
+type CompanySettings struct {
+	Payroll    PayrollSettings    `json:"payroll"`
+	Leave      LeaveSettings      `json:"leave"`
+	Attendance AttendanceSettings `json:"attendance"`
+}
+
+type PayrollSettings struct {
+	Currency           string `json:"currency"`
+	PayCycle           string `json:"pay_cycle"`
+	PayDay             int    `json:"pay_day"`
+	WorkDaysPerWeek    int    `json:"work_days_per_week"`
+	WorkingHoursPerDay int    `json:"working_hours_per_day"`
+}
+
+type LeaveSettings struct {
+	CasualLeaves    int  `json:"casual_leaves"`
+	SickLeaves      int  `json:"sick_leaves"`
+	EarnedLeaves    int  `json:"earned_leaves"`
+	CarryForward    bool `json:"carry_forward"`
+	MaxCarryForward int  `json:"max_carry_forward"`
+}
+
+type AttendanceSettings struct {
+	LateMarkThresholdMinutes int  `json:"late_mark_threshold_minutes"`
+	HalfDayHours             int  `json:"half_day_hours"`
+	FullDayHours             int  `json:"full_day_hours"`
+	AutoPunchOut             bool `json:"auto_punch_out"`
+}
+
+// Value implements driver.Valuer
+func (cs CompanySettings) Value() (driver.Value, error) {
+	return json.Marshal(cs)
+}
+
+// Scan implements sql.Scanner
+func (cs *CompanySettings) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	bytes, ok := value.([]byte)
+	if !ok {
+		return fmt.Errorf("failed to unmarshal CompanySettings")
+	}
+	return json.Unmarshal(bytes, cs)
+}
+
+// ============================================================================
+// COMPANY MODEL
+// ============================================================================
+
 type Company struct {
 	// Primary identification
 	ID uuid.UUID `db:"id" json:"id"`
@@ -26,10 +84,10 @@ type Company struct {
 	OwnerID uuid.UUID `db:"owner_id" json:"owner_id"`
 
 	// Company details
-	CompanyName        string  `db:"company_name" json:"company_name"`
-	LegalName          *string `db:"legal_name" json:"legal_name,omitempty"`
-	Industry           *string `db:"industry" json:"industry,omitempty"`
-	EmployeeCountRange *string `db:"employee_count_range" json:"employee_count_range,omitempty"`
+	CompanyName string  `db:"company_name" json:"company_name"`
+	LegalName   *string `db:"legal_name" json:"legal_name,omitempty"`
+	Industry    *string `db:"industry" json:"industry,omitempty"`
+	Description *string `db:"description" json:"description,omitempty"`
 
 	// Contact information
 	Email   *string `db:"email" json:"email,omitempty"`
@@ -44,29 +102,34 @@ type Company struct {
 	Country      string  `db:"country" json:"country"`
 	Pincode      *string `db:"pincode" json:"pincode,omitempty"`
 
-	// India-specific Tax/Legal details
+	// India-specific Tax/Legal (ALL OPTIONAL)
 	GSTIN *string `db:"gstin" json:"gstin,omitempty"` // GST Number
 	PAN   *string `db:"pan" json:"pan,omitempty"`     // PAN
 	TAN   *string `db:"tan" json:"tan,omitempty"`     // TAN
-	CIN   *string `db:"cin" json:"cin,omitempty"`     // Corporate Identity Number
+	CIN   *string `db:"cin" json:"cin,omitempty"`     // CIN
 
-	// Statutory registration
-	PFRegistrationNumber  *string `db:"pf_registration_number" json:"pf_registration_number,omitempty"`
-	PFSubCode             *string `db:"pf_sub_code" json:"pf_sub_code,omitempty"`
-	ESIRegistrationNumber *string `db:"esi_registration_number" json:"esi_registration_number,omitempty"`
-	PTRegistrationNumber  *string `db:"pt_registration_number" json:"pt_registration_number,omitempty"`
-	LWFRegistrationNumber *string `db:"lwf_registration_number" json:"lwf_registration_number,omitempty"`
+	// Statutory registrations
+	PFRegistrationNumber   *string `db:"pf_registration_number" json:"pf_registration_number,omitempty"`
+	PFSubCode              *string `db:"pf_sub_code" json:"pf_sub_code,omitempty"`
+	ESIRegistrationNumber  *string `db:"esi_registration_number" json:"esi_registration_number,omitempty"`
+	PTRegistrationNumber   *string `db:"pt_registration_number" json:"pt_registration_number,omitempty"`
+	LWFRegistrationNumber  *string `db:"lwf_registration_number" json:"lwf_registration_number,omitempty"`
+	MSMERegistrationNumber *string `db:"msme_registration_number" json:"msme_registration_number,omitempty"`
 
 	// Branding
-	LogoURL      *string `db:"logo_url" json:"logo_url,omitempty"`
-	PrimaryColor *string `db:"primary_color" json:"primary_color,omitempty"`
+	LogoURL             *string `db:"logo_url" json:"logo_url,omitempty"`
+	LogoThumbnailURL    *string `db:"logo_thumbnail_url" json:"logo_thumbnail_url,omitempty"`
+	PrimaryColor        string  `db:"primary_color" json:"primary_color"`
+	SecondaryColor      *string `db:"secondary_color" json:"secondary_color,omitempty"`
+
+	// Settings
+	Settings CompanySettings `db:"settings" json:"settings"`
 
 	// Status
 	Status CompanyStatus `db:"status" json:"status"`
 
-	// Subscription/Plan (for future billing)
-	PlanType     string     `db:"plan_type" json:"plan_type"`
-	TrialEndsAt  *time.Time `db:"trial_ends_at" json:"trial_ends_at,omitempty"`
+	// Financial Year
+	FinancialYearStartMonth int `db:"financial_year_start_month" json:"financial_year_start_month"`
 
 	// Timestamps
 	CreatedAt time.Time  `db:"created_at" json:"created_at"`
@@ -75,36 +138,47 @@ type Company struct {
 }
 
 // ============================================================================
-// Validation Methods
+// VALIDATION
 // ============================================================================
 
-// Validate validates the company struct
+// Validate validates company data
 func (c *Company) Validate() error {
 	if c.CompanyName == "" {
 		return fmt.Errorf("company name is required")
 	}
 
-	if c.Email != nil && *c.Email != "" && !isValidCompanyEmail(*c.Email) {
+	// Email validation
+	if c.Email != nil && *c.Email != "" && !utils.IsValidEmail(*c.Email) {
 		return fmt.Errorf("invalid email format")
 	}
 
-	if c.Phone != nil && *c.Phone != "" && !isValidCompanyPhone(*c.Phone) {
-		return fmt.Errorf("invalid phone number format")
+	// Phone validation
+	if c.Phone != nil && *c.Phone != "" && !utils.IsValidIndianPhone(*c.Phone) {
+		return fmt.Errorf("invalid phone number")
 	}
 
-	if c.GSTIN != nil && *c.GSTIN != "" && !isValidGSTIN(*c.GSTIN) {
+	// GSTIN validation
+	if c.GSTIN != nil && !utils.IsValidGSTIN(*c.GSTIN) {
 		return fmt.Errorf("invalid GSTIN format")
 	}
 
-	if c.PAN != nil && *c.PAN != "" && !isValidPAN(*c.PAN) {
+	// PAN validation
+	if c.PAN != nil && !utils.IsValidPAN(*c.PAN) {
 		return fmt.Errorf("invalid PAN format")
 	}
 
-	if c.TAN != nil && *c.TAN != "" && !isValidTAN(*c.TAN) {
+	// TAN validation
+	if c.TAN != nil && !utils.IsValidTAN(*c.TAN) {
 		return fmt.Errorf("invalid TAN format")
 	}
 
-	if c.Pincode != nil && *c.Pincode != "" && !isValidPincode(*c.Pincode) {
+	// CIN validation
+	if c.CIN != nil && !utils.IsValidCIN(*c.CIN) {
+		return fmt.Errorf("invalid CIN format")
+	}
+
+	// Pincode validation
+	if c.Pincode != nil && !utils.IsValidPincode(*c.Pincode) {
 		return fmt.Errorf("invalid pincode format")
 	}
 
@@ -112,114 +186,23 @@ func (c *Company) Validate() error {
 }
 
 // ============================================================================
-// Status Methods
+// HELPER METHODS
 // ============================================================================
 
-// IsActive checks if the company is active
+// IsActive checks if company is active
 func (c *Company) IsActive() bool {
-	return c.Status == CompanyActive && c.DeletedAt == nil
+	return c.Status == CompanyStatusActive && c.DeletedAt == nil
 }
 
-// IsDeleted checks if the company is soft deleted
-func (c *Company) IsDeleted() bool {
-	return c.DeletedAt != nil
-}
-
-// SoftDelete soft deletes the company
+// SoftDelete soft deletes company
 func (c *Company) SoftDelete() {
 	now := time.Now()
 	c.DeletedAt = &now
-	c.Status = CompanyInactive
+	c.Status = CompanyStatusInactive
 }
 
-// Restore restores a soft-deleted company
-func (c *Company) Restore() error {
-	if c.DeletedAt == nil {
-		return fmt.Errorf("company is not deleted")
-	}
-
-	c.DeletedAt = nil
-	c.Status = CompanyActive
-
-	return nil
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-// isValidCompanyEmail validates email format
-func isValidCompanyEmail(email string) bool {
-	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-	return emailRegex.MatchString(email)
-}
-
-// isValidCompanyPhone validates phone number format
-func isValidCompanyPhone(phone string) bool {
-	phoneRegex := regexp.MustCompile(`^\+?[1-9]\d{1,14}$`)
-	return phoneRegex.MatchString(phone)
-}
-
-// isValidGSTIN validates GSTIN format (15 digits)
-func isValidGSTIN(gstin string) bool {
-	gstinRegex := regexp.MustCompile(`^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$`)
-	return gstinRegex.MatchString(gstin)
-}
-
-// isValidPAN validates PAN format (10 characters)
-func isValidPAN(pan string) bool {
-	panRegex := regexp.MustCompile(`^[A-Z]{5}[0-9]{4}[A-Z]{1}$`)
-	return panRegex.MatchString(pan)
-}
-
-// isValidTAN validates TAN format (10 characters)
-func isValidTAN(tan string) bool {
-	tanRegex := regexp.MustCompile(`^[A-Z]{4}[0-9]{5}[A-Z]{1}$`)
-	return tanRegex.MatchString(tan)
-}
-
-// isValidPincode validates Indian pincode (6 digits)
-func isValidPincode(pincode string) bool {
-	pincodeRegex := regexp.MustCompile(`^\d{6}$`)
-	return pincodeRegex.MatchString(pincode)
-}
-
-// ============================================================================
-// Public Response Methods
-// ============================================================================
-
-// PublicCompany represents company data safe for public API responses
-type PublicCompany struct {
-	ID                    uuid.UUID     `json:"id"`
-	CompanyName           string        `json:"company_name"`
-	LegalName             *string       `json:"legal_name,omitempty"`
-	Industry              *string       `json:"industry,omitempty"`
-	Email                 *string       `json:"email,omitempty"`
-	Phone                 *string       `json:"phone,omitempty"`
-	City                  *string       `json:"city,omitempty"`
-	State                 *string       `json:"state,omitempty"`
-	Country               string        `json:"country"`
-	LogoURL               *string       `json:"logo_url,omitempty"`
-	Status                CompanyStatus `json:"status"`
-	PlanType              string        `json:"plan_type"`
-	CreatedAt             time.Time     `json:"created_at"`
-}
-
-// ToPublic converts Company to PublicCompany (safe for API response)
-func (c *Company) ToPublic() *PublicCompany {
-	return &PublicCompany{
-		ID:          c.ID,
-		CompanyName: c.CompanyName,
-		LegalName:   c.LegalName,
-		Industry:    c.Industry,
-		Email:       c.Email,
-		Phone:       c.Phone,
-		City:        c.City,
-		State:       c.State,
-		Country:     c.Country,
-		LogoURL:     c.LogoURL,
-		Status:      c.Status,
-		PlanType:    c.PlanType,
-		CreatedAt:   c.CreatedAt,
-	}
+// GetEmployeeCount returns employee count (implement in repository)
+func (c *Company) GetEmployeeCount() int {
+	// This will be implemented in repository layer
+	return 0
 }
