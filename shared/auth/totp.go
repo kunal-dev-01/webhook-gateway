@@ -124,21 +124,25 @@ func (t *TOTPManager) GenerateRecoveryCodes(count int) ([]string, error) {
 	return codes, nil
 }
 
-// ValidateRecoveryCode checks if recovery code is valid (Constant Time)
+// Fix: Empty stored codes skip karo
 func (t *TOTPManager) ValidateRecoveryCode(inputCode string, storedCodes []string) (bool, int) {
 	if len(inputCode) == 0 || len(storedCodes) == 0 {
 		return false, -1
 	}
 
-	// Normalize input once
 	normalizedInput := normalizeRecoveryCode(inputCode)
+	if len(normalizedInput) == 0 {
+		return false, -1 // Empty after normalization
+	}
+	
 	inputBytes := []byte(normalizedInput)
 
 	for i, storedCode := range storedCodes {
-		// Normalize stored code (usually stored raw, but good to be safe)
+		if len(storedCode) == 0 {
+			continue // Skip empty stored codes
+		}
+		
 		normalizedStored := normalizeRecoveryCode(storedCode)
-
-		// ✅ SECURITY: ConstantTimeCompare prevents Timing Attacks
 		if subtle.ConstantTimeCompare(inputBytes, []byte(normalizedStored)) == 1 {
 			return true, i
 		}
