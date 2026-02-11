@@ -42,8 +42,8 @@ type Dependencies struct {
 	SessionMgr  *auth.SessionManager
 
 	// Services
-	AuthService *services.AuthService
-	UserService *services.UserService
+	AuthService  *services.AuthService
+	UserService  *services.UserService
 	EmailService *utils.EmailService
 
 	// Handlers
@@ -87,7 +87,14 @@ func InitDependencies() (*Dependencies, error) {
 	if err != nil {
 		return nil, err
 	}
-	sessionMgr := auth.NewSessionManager(redis.Client) // Pass raw client
+	// ✅ FIXED: Pass redis client and config
+	sessionMgr := auth.NewSessionManager(
+		redis.Client, // *redis.Client
+		auth.SessionConfig{
+			MaxSessions: 5,              // Max 5 concurrent sessions per user
+			DefaultTTL:  24 * time.Hour, // Session expires in 24 hours
+		},
+	) // Pass raw client
 
 	// 5. External Services
 	emailService, err := utils.NewEmailService(&cfg.AWS, logger)
