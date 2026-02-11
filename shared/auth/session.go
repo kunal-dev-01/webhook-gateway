@@ -82,8 +82,10 @@ func NewSessionManager(redisClient *redis.Client, cfg SessionConfig) *SessionMan
 }
 
 // SessionData represents session information
+// UPDATED: Added CompanyID for multi-tenant context
 type SessionData struct {
 	UserID       uuid.UUID `json:"user_id"`
+	CompanyID    uuid.UUID `json:"company_id"`    // NEW: Multi-tenant isolation
 	Email        string    `json:"email"`
 	Role         string    `json:"role"`
 	SessionID    string    `json:"session_id"`
@@ -108,13 +110,15 @@ func (s *SessionManager) userSessionsKey(userID uuid.UUID) string {
 // ============================================================================
 
 // CreateSession creates a new session with max limit enforcement
-func (s *SessionManager) CreateSession(ctx context.Context, userID uuid.UUID, email, role, sessionID, ipAddress, userAgent string, ttl time.Duration) error {
+// UPDATED: Now requires companyID parameter
+func (s *SessionManager) CreateSession(ctx context.Context, userID, companyID uuid.UUID, email, role, sessionID, ipAddress, userAgent string, ttl time.Duration) error {
 	if ttl <= 0 {
 		ttl = s.defaultTTL
 	}
 
 	session := SessionData{
 		UserID:       userID,
+		CompanyID:    companyID, // NEW: Store company context
 		Email:        email,
 		Role:         role,
 		SessionID:    sessionID,

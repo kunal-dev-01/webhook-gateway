@@ -37,10 +37,12 @@ func NewTokenManager(cfg *config.JWTConfig) *TokenManager {
 }
 
 // Claims represents JWT claims
+// UPDATED: Added CompanyID for multi-tenant support
 type Claims struct {
 	UserID    uuid.UUID `json:"user_id"`
+	CompanyID uuid.UUID `json:"company_id"` // NEW: Multi-tenant isolation
 	Email     string    `json:"email"`
-	Role      string    `json:"role"`
+	Role      string    `json:"role"` // Keep as string for flexibility
 	SessionID string    `json:"session_id"`
 	TokenType string    `json:"token_type"` // "access" or "refresh"
 	jwt.RegisteredClaims
@@ -60,7 +62,8 @@ type TokenPair struct {
 // ============================================================================
 
 // GenerateTokenPair generates both access and refresh tokens
-func (m *TokenManager) GenerateTokenPair(userID uuid.UUID, email, role string) (*TokenPair, error) {
+// UPDATED: Now requires companyID for multi-tenant support
+func (m *TokenManager) GenerateTokenPair(userID, companyID uuid.UUID, email, role string) (*TokenPair, error) {
 	// Generate a cryptographic random session ID
 	sessionID, err := generateSessionID()
 	if err != nil {
@@ -68,13 +71,13 @@ func (m *TokenManager) GenerateTokenPair(userID uuid.UUID, email, role string) (
 	}
 
 	// Generate Access Token
-	accessToken, err := m.generateToken(userID, email, role, sessionID, "access", m.config.AccessTokenDuration)
+	accessToken, err := m.generateToken(userID, companyID, email, role, sessionID, "access", m.config.AccessTokenDuration)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
 	}
 
 	// Generate Refresh Token
-	refreshToken, err := m.generateToken(userID, email, role, sessionID, "refresh", m.config.RefreshTokenDuration)
+	refreshToken, err := m.generateToken(userID, companyID, email, role, sessionID, "refresh", m.config.RefreshTokenDuration)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
 	}
@@ -88,11 +91,13 @@ func (m *TokenManager) GenerateTokenPair(userID uuid.UUID, email, role string) (
 	}, nil
 }
 
-func (m *TokenManager) generateToken(userID uuid.UUID, email, role, sessionID, tokenType string, duration time.Duration) (string, error) {
+// UPDATED: Added companyID parameter
+func (m *TokenManager) generateToken(userID, companyID uuid.UUID, email, role, sessionID, tokenType string, duration time.Duration) (string, error) {
 	now := time.Now()
 	
 	claims := Claims{
 		UserID:    userID,
+		CompanyID: companyID, // NEW: Store company context
 		Email:     email,
 		Role:      role,
 		SessionID: sessionID,
@@ -169,6 +174,11 @@ func (m *TokenManager) validateToken(tokenString, expectedType string) (*Claims,
 		return nil, ErrInvalidClaims
 	}
 
+	// VALIDATION: Ensure CompanyID is not nil
+	if claims.CompanyID == uuid.Nil {
+		return nil, ErrInvalidClaims
+	}
+
 	return claims, nil
 }
 
@@ -178,17 +188,19 @@ func (m *TokenManager) validateToken(tokenString, expectedType string) (*Claims,
 
 // RefreshAccessToken generates a new access token using a valid refresh token.
 // IMPORTANT: It preserves the original SessionID to maintain session continuity.
+// UPDATED: Also preserves CompanyID
 func (m *TokenManager) RefreshAccessToken(refreshTokenString string) (string, error) {
 	claims, err := m.ValidateRefreshToken(refreshTokenString)
 	if err != nil {
 		return "", err
 	}
 
-	// Issue new access token, but KEEP the original SessionID
+	// Issue new access token, but KEEP the original SessionID and CompanyID
 	// This ensures that if the session is revoked in Redis, this new token 
 	// (which shares the sessionID) will also be blocked by middleware.
 	return m.generateToken(
 		claims.UserID,
+		claims.CompanyID, // NEW: Preserve company context
 		claims.Email,
 		claims.Role,
 		claims.SessionID,

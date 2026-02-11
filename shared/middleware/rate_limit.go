@@ -140,11 +140,3 @@ func (rl *RateLimiter) UserRateLimit(cfg RateLimitConfig) fiber.Handler {
 		return c.Next()
 	}
 }
-
-// Helper for older Go versions (Go 1.21+ has built-in max)
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
