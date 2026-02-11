@@ -11,16 +11,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// UserRole represents the role of a user
-type UserRole string
-
-const (
-	RoleAdmin      UserRole = "admin"
-	RoleHR         UserRole = "hr"
-	RoleAccountant UserRole = "accountant"
-	RoleViewer     UserRole = "viewer"
-)
-
 // UserStatus represents the status of a user account
 type UserStatus string
 
@@ -31,7 +21,7 @@ const (
 	StatusDeleted   UserStatus = "deleted"
 )
 
-// User represents a user in the system
+// User represents a user in the system (authentication & profile only)
 type User struct {
 	// Primary identification
 	ID uuid.UUID `db:"id" json:"id"`
@@ -56,8 +46,7 @@ type User struct {
 	Timezone string  `db:"timezone" json:"timezone"`
 	Language string  `db:"language" json:"language"`
 
-	// User role and status
-	Role   UserRole   `db:"role" json:"role"`
+	// Account status (NO ROLE - role is in user_company_roles)
 	Status UserStatus `db:"status" json:"status"`
 
 	// Account security
@@ -219,36 +208,6 @@ func (u *User) Restore() error {
 }
 
 // ============================================================================
-// Role Permission Methods
-// ============================================================================
-
-// HasRole checks if user has a specific role
-func (u *User) HasRole(role UserRole) bool {
-	return u.Role == role
-}
-
-// IsAdmin checks if user is an admin
-func (u *User) IsAdmin() bool {
-	return u.Role == RoleAdmin
-}
-
-// CanManageUsers checks if user can manage other users
-func (u *User) CanManageUsers() bool {
-	return u.Role == RoleAdmin || u.Role == RoleHR
-}
-
-// CanRunPayroll checks if user can run payroll
-func (u *User) CanRunPayroll() bool {
-	return u.Role == RoleAdmin || u.Role == RoleHR || u.Role == RoleAccountant
-}
-
-// CanViewReports checks if user can view reports
-func (u *User) CanViewReports() bool {
-	// All roles can view reports
-	return true
-}
-
-// ============================================================================
 // Validation Methods
 // ============================================================================
 
@@ -312,16 +271,15 @@ func (u *User) MarshalJSON() ([]byte, error) {
 
 // PublicUser represents user data safe for public API responses
 type PublicUser struct {
-	ID              uuid.UUID  `json:"id"`
-	Email           string     `json:"email"`
-	FullName        string     `json:"full_name"`
-	Phone           *string    `json:"phone,omitempty"`
-	Role            UserRole   `json:"role"`
-	Status          UserStatus `json:"status"`
-	EmailVerified   bool       `json:"email_verified"`
-	TwoFactorEnabled bool      `json:"two_factor_enabled"`
-	LastLoginAt     *time.Time `json:"last_login_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
+	ID               uuid.UUID  `json:"id"`
+	Email            string     `json:"email"`
+	FullName         string     `json:"full_name"`
+	Phone            *string    `json:"phone,omitempty"`
+	Status           UserStatus `json:"status"`
+	EmailVerified    bool       `json:"email_verified"`
+	TwoFactorEnabled bool       `json:"two_factor_enabled"`
+	LastLoginAt      *time.Time `json:"last_login_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
 }
 
 // ToPublic converts User to PublicUser (safe for API response)
@@ -331,7 +289,6 @@ func (u *User) ToPublic() *PublicUser {
 		Email:            u.Email,
 		FullName:         u.FullName,
 		Phone:            u.Phone,
-		Role:             u.Role,
 		Status:           u.Status,
 		EmailVerified:    u.EmailVerified,
 		TwoFactorEnabled: u.TwoFactorEnabled,
