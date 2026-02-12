@@ -29,32 +29,45 @@ func NewUserRepository(db *sqlx.DB) *UserRepository {
 // ============================================================================
 
 const (
+	// UPDATED: Added company_id, department, designation, employee_id, avatar fields, permissions
 	userSelectColumns = `
-		id, email, password_hash, email_verified, email_verified_at,
+		id, company_id, email, password_hash, 
+		email_verified, email_verified_at,
 		two_factor_enabled, two_factor_secret, two_factor_recovery_codes, two_factor_verified_at,
-		full_name, phone, timezone, language,
-		role, status,
-		last_login_at, last_login_ip, failed_login_attempts, locked_until,
+		full_name, phone, timezone, language, date_of_birth, gender,
+		role, department, designation, employee_id,
+		avatar_url, avatar_thumbnail_url,
+		permissions,
+		status, is_active,
+		last_login_at, last_login_ip, last_active_at,
+		failed_login_attempts, locked_until,
 		password_changed_at, must_change_password,
+		invited_by, invited_at, joined_at,
 		created_at, updated_at, deleted_at
 	`
 
 	baseUserQuery = `SELECT ` + userSelectColumns + ` FROM users WHERE deleted_at IS NULL`
 
+	// UPDATED: Added company_id and new fields
 	createUserQuery = `
 		INSERT INTO users (
-			id, email, password_hash, full_name, phone,
-			role, status, timezone, language,
+			id, company_id, email, password_hash, full_name, phone,
+			role, department, designation, employee_id,
+			status, timezone, language,
 			email_verified, two_factor_enabled,
-			password_changed_at, created_at, updated_at
+			password_changed_at, invited_by, invited_at,
+			created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5,
-			$6, $7, $8, $9,
-			$10, $11, $12, $13, $14
+			$1, $2, $3, $4, $5, $6,
+			$7, $8, $9, $10,
+			$11, $12, $13,
+			$14, $15, $16, $17, $18,
+			$19, $20
 		)
 		RETURNING id, created_at, updated_at
 	`
 
+	// UPDATED: Added new fields
 	updateUserQuery = `
 		UPDATE users SET
 			email = $2,
@@ -62,26 +75,33 @@ const (
 			phone = $4,
 			timezone = $5,
 			language = $6,
-			role = $7,
-			status = $8,
-			email_verified = $9,
-			email_verified_at = $10,
-			two_factor_enabled = $11,
-			two_factor_secret = $12,
-			two_factor_recovery_codes = $13,
-			two_factor_verified_at = $14,
-			must_change_password = $15,
-			updated_at = $16
+			date_of_birth = $7,
+			gender = $8,
+			role = $9,
+			department = $10,
+			designation = $11,
+			employee_id = $12,
+			avatar_url = $13,
+			avatar_thumbnail_url = $14,
+			status = $15,
+			email_verified = $16,
+			email_verified_at = $17,
+			two_factor_enabled = $18,
+			two_factor_secret = $19,
+			two_factor_recovery_codes = $20,
+			two_factor_verified_at = $21,
+			must_change_password = $22,
+			updated_at = $23
 		WHERE id = $1 AND deleted_at IS NULL
 		RETURNING updated_at
 	`
 )
 
 var (
-	ErrUserNotFound      = fmt.Errorf("user not found")
-	ErrEmailExists       = fmt.Errorf("email already exists")
+	ErrUserNotFound       = fmt.Errorf("user not found")
+	ErrEmailExists        = fmt.Errorf("email already exists")
 	ErrUserAlreadyDeleted = fmt.Errorf("user not found or already deleted")
-	ErrUserNotDeleted    = fmt.Errorf("user not found or not deleted")
+	ErrUserNotDeleted     = fmt.Errorf("user not found or not deleted")
 )
 
 // ============================================================================
@@ -89,9 +109,15 @@ var (
 // ============================================================================
 
 // Create creates a new user
+// UPDATED: Now requires company_id
 func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 	if user.ID == uuid.Nil {
 		user.ID = uuid.New()
+	}
+	
+	// Validation: CompanyID is required
+	if user.CompanyID == uuid.Nil {
+		return fmt.Errorf("company_id is required")
 	}
 
 	now := time.Now()
@@ -99,10 +125,12 @@ func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 	user.UpdatedAt = now
 
 	err := r.db.QueryRowContext(ctx, createUserQuery,
-		user.ID, user.Email, user.PasswordHash, user.FullName, user.Phone,
-		user.Role, user.Status, user.Timezone, user.Language,
+		user.ID, user.CompanyID, user.Email, user.PasswordHash, user.FullName, user.Phone,
+		user.Role, user.Department, user.Designation, user.EmployeeID,
+		user.Status, user.Timezone, user.Language,
 		user.EmailVerified, user.TwoFactorEnabled,
-		user.PasswordChangedAt, user.CreatedAt, user.UpdatedAt,
+		user.PasswordChangedAt, user.InvitedBy, user.InvitedAt,
+		user.CreatedAt, user.UpdatedAt,
 	).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {
@@ -116,18 +144,39 @@ func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 // ============================================================================
 
 // GetByID retrieves a user by ID
+// UPDATED: Added company_id for multi-tenant isolation
 func (r *UserRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	return r.getUser(ctx, "id = $1", id)
 }
 
+// GetByIDAndCompany retrieves user by ID with company verification
+// NEW: Multi-tenant safe query
+func (r *UserRepository) GetByIDAndCompany(ctx context.Context, id, companyID uuid.UUID) (*models.User, error) {
+	return r.getUser(ctx, "id = $1 AND company_id = $2", id, companyID)
+}
+
 // GetByEmail retrieves a user by email
+// NOTE: Email alone is not unique - need company_id for proper lookup
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.User, error) {
 	return r.getUser(ctx, "email = $1", strings.ToLower(email))
 }
 
+// GetByEmailAndCompany retrieves user by email within company
+// NEW: Multi-tenant safe email lookup
+func (r *UserRepository) GetByEmailAndCompany(ctx context.Context, email string, companyID uuid.UUID) (*models.User, error) {
+	return r.getUser(ctx, "email = $1 AND company_id = $2", strings.ToLower(email), companyID)
+}
+
+// GetByEmployeeID retrieves user by employee ID within company
+// NEW: Internal employee ID lookup
+func (r *UserRepository) GetByEmployeeID(ctx context.Context, employeeID string, companyID uuid.UUID) (*models.User, error) {
+	return r.getUser(ctx, "employee_id = $1 AND company_id = $2", employeeID, companyID)
+}
+
 // List retrieves users with filters and pagination
-func (r *UserRepository) List(ctx context.Context, filters ListUsersFilter) ([]*models.User, int, error) {
-	whereClauses, args := r.buildFilters(filters)
+// UPDATED: Now requires companyID for multi-tenant isolation
+func (r *UserRepository) List(ctx context.Context, companyID uuid.UUID, filters ListUsersFilter) ([]*models.User, int, error) {
+	whereClauses, args := r.buildFilters(companyID, filters)
 	whereClause := strings.Join(whereClauses, " AND ")
 
 	total, err := r.countUsers(ctx, whereClause, args)
@@ -143,17 +192,39 @@ func (r *UserRepository) List(ctx context.Context, filters ListUsersFilter) ([]*
 	return users, total, nil
 }
 
+// GetCompanyOwner retrieves the owner of a company
+// NEW: Fetch company owner
+func (r *UserRepository) GetCompanyOwner(ctx context.Context, companyID uuid.UUID) (*models.User, error) {
+	return r.getUser(ctx, "company_id = $1 AND role = 'owner' AND is_active = true", companyID)
+}
+
+// CountByCompany returns user count for a company
+// NEW: Company-specific count
+func (r *UserRepository) CountByCompany(ctx context.Context, companyID uuid.UUID) (int, error) {
+	query := `SELECT COUNT(*) FROM users WHERE company_id = $1 AND deleted_at IS NULL`
+	var count int
+	err := r.db.GetContext(ctx, &count, query, companyID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count company users: %w", err)
+	}
+	return count, nil
+}
+
 // ============================================================================
 // Update Operations
 // ============================================================================
 
 // Update updates a user
+// UPDATED: Now handles all new fields
 func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
 	user.UpdatedAt = time.Now()
 
 	err := r.db.QueryRowContext(ctx, updateUserQuery,
 		user.ID, user.Email, user.FullName, user.Phone,
-		user.Timezone, user.Language, user.Role, user.Status,
+		user.Timezone, user.Language, user.DateOfBirth, user.Gender,
+		user.Role, user.Department, user.Designation, user.EmployeeID,
+		user.AvatarURL, user.AvatarThumbnailURL,
+		user.Status,
 		user.EmailVerified, user.EmailVerifiedAt,
 		user.TwoFactorEnabled, user.TwoFactorSecret,
 		pq.Array(user.TwoFactorRecoveryCodes), user.TwoFactorVerifiedAt,
@@ -187,6 +258,7 @@ func (r *UserRepository) UpdateLastLogin(ctx context.Context, userID uuid.UUID, 
 		UPDATE users SET
 			last_login_at = $2,
 			last_login_ip = $3,
+			last_active_at = $2,
 			failed_login_attempts = 0,
 			locked_until = NULL,
 			status = CASE 
@@ -199,8 +271,22 @@ func (r *UserRepository) UpdateLastLogin(ctx context.Context, userID uuid.UUID, 
 	return r.execAndCheck(ctx, query, userID, now, ip, "update last login")
 }
 
+// UpdateActivity updates last active timestamp
+// NEW: Track user activity
+func (r *UserRepository) UpdateActivity(ctx context.Context, userID uuid.UUID) error {
+	now := time.Now()
+	query := `
+		UPDATE users SET
+			last_active_at = $2,
+			updated_at = $2
+		WHERE id = $1 AND deleted_at IS NULL
+	`
+	return r.execAndCheck(ctx, query, userID, now, "update activity")
+}
+
 // IncrementFailedAttempts increments failed login attempts
-func (r *UserRepository) IncrementFailedAttempts(ctx context.Context, email string) error {
+// UPDATED: Now works with email + company_id for multi-tenant
+func (r *UserRepository) IncrementFailedAttempts(ctx context.Context, email string, companyID uuid.UUID) error {
 	query := `
 		UPDATE users SET
 			failed_login_attempts = failed_login_attempts + 1,
@@ -213,9 +299,9 @@ func (r *UserRepository) IncrementFailedAttempts(ctx context.Context, email stri
 				ELSE status
 			END,
 			updated_at = NOW()
-		WHERE email = $1 AND deleted_at IS NULL
+		WHERE email = $1 AND company_id = $2 AND deleted_at IS NULL
 	`
-	return r.execAndCheck(ctx, query, strings.ToLower(email), "increment failed attempts")
+	return r.execAndCheck(ctx, query, strings.ToLower(email), companyID, "increment failed attempts")
 }
 
 // MarkEmailAsVerified marks email as verified
@@ -225,10 +311,27 @@ func (r *UserRepository) MarkEmailAsVerified(ctx context.Context, userID uuid.UU
 		UPDATE users SET
 			email_verified = true,
 			email_verified_at = $2,
+			status = 'active',
 			updated_at = $2
 		WHERE id = $1 AND deleted_at IS NULL
 	`
 	return r.execAndCheck(ctx, query, userID, now, "mark email as verified")
+}
+
+// UpdatePermissions updates user permissions
+// NEW: Granular permission updates
+func (r *UserRepository) UpdatePermissions(ctx context.Context, userID uuid.UUID, permissions models.Permissions) error {
+	query := `
+		UPDATE users SET
+			permissions = $2,
+			updated_at = NOW()
+		WHERE id = $1 AND deleted_at IS NULL
+	`
+	permJSON, err := permissions.Value()
+	if err != nil {
+		return fmt.Errorf("failed to marshal permissions: %w", err)
+	}
+	return r.execAndCheck(ctx, query, userID, permJSON, "update permissions")
 }
 
 // ============================================================================
@@ -242,6 +345,7 @@ func (r *UserRepository) SoftDelete(ctx context.Context, userID uuid.UUID) error
 		UPDATE users SET
 			deleted_at = $2,
 			status = 'deleted',
+			is_active = false,
 			email = email || '.deleted.' || EXTRACT(EPOCH FROM $2)::TEXT,
 			updated_at = $2
 		WHERE id = $1 AND deleted_at IS NULL
@@ -262,6 +366,7 @@ func (r *UserRepository) Restore(ctx context.Context, userID uuid.UUID) error {
 		UPDATE users SET
 			deleted_at = NULL,
 			status = 'active',
+			is_active = true,
 			email = REGEXP_REPLACE(email, '\.deleted\.\d+$', ''),
 			updated_at = $2
 		WHERE id = $1 AND deleted_at IS NOT NULL
@@ -286,10 +391,23 @@ func (r *UserRepository) HardDelete(ctx context.Context, userID uuid.UUID) error
 // ============================================================================
 
 // Exists checks if a user exists by email
+// DEPRECATED: Use ExistsInCompany for multi-tenant safety
 func (r *UserRepository) Exists(ctx context.Context, email string) (bool, error) {
 	query := `SELECT EXISTS(SELECT 1 FROM users WHERE email = $1 AND deleted_at IS NULL)`
 	var exists bool
 	err := r.db.GetContext(ctx, &exists, query, strings.ToLower(email))
+	if err != nil {
+		return false, fmt.Errorf("failed to check user existence: %w", err)
+	}
+	return exists, nil
+}
+
+// ExistsInCompany checks if email exists within company
+// NEW: Multi-tenant safe existence check
+func (r *UserRepository) ExistsInCompany(ctx context.Context, email string, companyID uuid.UUID) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM users WHERE email = $1 AND company_id = $2 AND deleted_at IS NULL)`
+	var exists bool
+	err := r.db.GetContext(ctx, &exists, query, strings.ToLower(email), companyID)
 	if err != nil {
 		return false, fmt.Errorf("failed to check user existence: %w", err)
 	}
@@ -324,10 +442,12 @@ func (r *UserRepository) getUser(ctx context.Context, condition string, args ...
 	return &user, nil
 }
 
-func (r *UserRepository) buildFilters(filters ListUsersFilter) ([]string, []any) {
-	whereClauses := []string{"deleted_at IS NULL"}
-	args := []any{}
-	argCounter := 1
+// UPDATED: Now includes company_id filter by default
+func (r *UserRepository) buildFilters(companyID uuid.UUID, filters ListUsersFilter) ([]string, []any) {
+	// CRITICAL: Always filter by company_id for multi-tenant isolation
+	whereClauses := []string{"deleted_at IS NULL", "company_id = $1"}
+	args := []any{companyID}
+	argCounter := 2
 
 	addFilter := func(column string, value any) {
 		whereClauses = append(whereClauses, fmt.Sprintf("%s = $%d", column, argCounter))
@@ -341,11 +461,20 @@ func (r *UserRepository) buildFilters(filters ListUsersFilter) ([]string, []any)
 	if filters.Role != nil {
 		addFilter("role", *filters.Role)
 	}
+	if filters.Department != nil {
+		addFilter("department", *filters.Department)
+	}
 	if filters.EmailVerified != nil {
 		addFilter("email_verified", *filters.EmailVerified)
 	}
+	if filters.IsActive != nil {
+		addFilter("is_active", *filters.IsActive)
+	}
 	if filters.Search != "" {
-		whereClauses = append(whereClauses, fmt.Sprintf("(full_name ILIKE $%d OR email ILIKE $%d)", argCounter, argCounter))
+		whereClauses = append(whereClauses, fmt.Sprintf(
+			"(full_name ILIKE $%d OR email ILIKE $%d OR employee_id ILIKE $%d)",
+			argCounter, argCounter, argCounter,
+		))
 		args = append(args, "%"+filters.Search+"%")
 		argCounter++
 	}
@@ -422,7 +551,11 @@ func (r *UserRepository) handleDBError(err error, operation string) error {
 		return ErrUserNotFound
 	}
 	if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
-		return ErrEmailExists
+		// Unique constraint violation
+		if strings.Contains(pqErr.Constraint, "email") {
+			return ErrEmailExists
+		}
+		return fmt.Errorf("duplicate entry: %s", pqErr.Constraint)
 	}
 	return fmt.Errorf("failed to %s: %w", operation, err)
 }
@@ -432,11 +565,14 @@ func (r *UserRepository) handleDBError(err error, operation string) error {
 // ============================================================================
 
 // ListUsersFilter represents filters for listing users
+// UPDATED: Added new filter fields
 type ListUsersFilter struct {
 	Status        *models.UserStatus
 	Role          *models.UserRole
+	Department    *string
 	EmailVerified *bool
-	Search        string
+	IsActive      *bool
+	Search        string // Searches: name, email, employee_id
 	SortBy        string
 	SortDesc      bool
 	Limit         int

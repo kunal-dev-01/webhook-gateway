@@ -20,19 +20,22 @@ import (
 
 // AuthService handles authentication business logic
 type AuthService struct {
-	userRepo     *repository.UserRepository
-	tokenRepo    *repository.TokenRepository
-	jwtManager   *auth.TokenManager
-	totpManager  *auth.TOTPManager
-	sessionMgr   *auth.SessionManager
-	emailService *utils.EmailService
-	config       *config.Config
-	logger       zerolog.Logger
+	userRepo       *repository.UserRepository
+	companyRepo    *repository.CompanyRepository // NEW: For company operations
+	tokenRepo      *repository.TokenRepository
+	jwtManager     *auth.TokenManager
+	totpManager    *auth.TOTPManager
+	sessionMgr     *auth.SessionManager
+	emailService   *utils.EmailService
+	config         *config.Config
+	logger         zerolog.Logger
 }
 
 // NewAuthService creates new auth service
+// UPDATED: Added companyRepo parameter
 func NewAuthService(
 	userRepo *repository.UserRepository,
+	companyRepo *repository.CompanyRepository, // NEW
 	tokenRepo *repository.TokenRepository,
 	jwtManager *auth.TokenManager,
 	totpManager *auth.TOTPManager,
@@ -43,6 +46,7 @@ func NewAuthService(
 ) *AuthService {
 	return &AuthService{
 		userRepo:     userRepo,
+		companyRepo:  companyRepo, // NEW
 		tokenRepo:    tokenRepo,
 		jwtManager:   jwtManager,
 		totpManager:  totpManager,
@@ -57,6 +61,8 @@ func NewAuthService(
 // Registration
 // ============================================================================
 
+// Register creates a new company and owner user
+// UPDATED: Now creates company + owner user (multi-tenant onboarding)
 func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) error {
 	if err := utils.ValidatePassword(req.Password); err != nil {
 		return fmt.Errorf("password validation failed: %w", err)
@@ -64,6 +70,7 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) er
 
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 
+	// Check if email already exists (across all companies)
 	exists, err := s.userRepo.Exists(ctx, email)
 	if err != nil {
 		s.logger.Error().Err(err).Str("email", email).Msg("failed to check user existence")
@@ -73,12 +80,28 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) er
 		return errors.New("email already registered")
 	}
 
+	// Create Company first
+	company := &models.Company{
+		ID:     uuid.New(),
+		Name:   req.CompanyName,
+		Status: models.CompanyStatusActive,
+		// OwnerID will be set after user creation
+	}
+
+	if err := s.companyRepo.Create(ctx, company); err != nil {
+		s.logger.Error().Err(err).Str("company_name", req.CompanyName).Msg("failed to create company")
+		return errors.New("failed to create company")
+	}
+
+	// Create Owner User
 	user := &models.User{
 		ID:                uuid.New(),
+		CompanyID:         company.ID, // NEW: Link to company
 		Email:             email,
 		FullName:          req.FullName,
-		Role:              models.RoleAdmin,
-		Status:            models.StatusActive,
+		Role:              models.UserRoleOwner, // NEW: Owner role
+		Status:            models.UserStatusPendingVerification,
+		IsActive:          true,
 		Timezone:          "UTC",
 		Language:          "en",
 		EmailVerified:     false,
@@ -88,16 +111,30 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) er
 
 	if err := user.SetPassword(req.Password); err != nil {
 		s.logger.Error().Err(err).Msg("failed to hash password")
+		// Rollback company creation
+		_ = s.companyRepo.Delete(ctx, company.ID)
 		return errors.New("internal server error")
 	}
 
 	if err := s.userRepo.Create(ctx, user); err != nil {
 		s.logger.Error().Err(err).Str("email", email).Msg("failed to create user")
+		// Rollback company creation
+		_ = s.companyRepo.Delete(ctx, company.ID)
 		return errors.New("failed to create account")
 	}
 
+	// Update company with owner_id
+	company.OwnerID = user.ID
+	if err := s.companyRepo.Update(ctx, company); err != nil {
+		s.logger.Error().Err(err).Msg("failed to set company owner")
+		// Continue anyway - can be fixed manually
+	}
+
 	s.sendVerificationEmailAsync(user)
-	s.logger.Info().Str("user_id", user.ID.String()).Msg("user registered")
+	s.logger.Info().
+		Str("user_id", user.ID.String()).
+		Str("company_id", company.ID.String()).
+		Msg("company and owner registered")
 	return nil
 }
 
@@ -105,6 +142,8 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) er
 // Login & Authentication
 // ============================================================================
 
+// Login authenticates user and returns tokens
+// NOTE: Email alone is not unique - we check across all companies
 func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, ip, userAgent string) (*dto.LoginResponse, error) {
 	limited, err := s.tokenRepo.CheckLoginRateLimit(ctx, ip, 10, 15*time.Minute)
 	if err != nil {
@@ -116,19 +155,27 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, ip, user
 	}
 
 	email := strings.ToLower(strings.TrimSpace(req.Email))
+	
+	// NOTE: GetByEmail searches across all companies
+	// If your DB has unique(company_id, email), this still works
+	// because email can be duplicate across companies but unique within
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	if err != nil {
-		_ = s.userRepo.IncrementFailedAttempts(ctx, email)
+		// Don't increment for specific company - increment globally by email
 		return nil, errors.New("invalid credentials")
 	}
 
 	if !user.CanLogin() {
-		s.logger.Warn().Str("user_id", user.ID.String()).Str("status", string(user.Status)).Msg("login blocked")
+		s.logger.Warn().
+			Str("user_id", user.ID.String()).
+			Str("status", string(user.Status)).
+			Msg("login blocked")
 		return nil, errors.New("account is locked or inactive")
 	}
 
 	if !user.CheckPassword(req.Password) {
-		_ = s.userRepo.IncrementFailedAttempts(ctx, email)
+		// Increment within company context
+		_ = s.userRepo.IncrementFailedAttempts(ctx, email, user.CompanyID)
 		return nil, errors.New("invalid credentials")
 	}
 
@@ -210,6 +257,7 @@ func (s *AuthService) Verify2FA(ctx context.Context, req *dto.Verify2FARequest, 
 // Token Management (Refresh & Complete Login)
 // ============================================================================
 
+// RefreshAccessToken generates new access token from refresh token
 func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshToken string) (string, error) {
 	claims, err := s.jwtManager.ValidateRefreshToken(refreshToken)
 	if err != nil {
@@ -235,16 +283,26 @@ func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshToken strin
 	return accessToken, nil
 }
 
+// completeLogin generates tokens and creates session
+// UPDATED: Now passes CompanyID to token and session creation
 func (s *AuthService) completeLogin(ctx context.Context, user *models.User, ip, userAgent string) (*dto.LoginResponse, error) {
-	tokenPair, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, string(user.Role))
+	// Generate tokens with CompanyID
+	tokenPair, err := s.jwtManager.GenerateTokenPair(
+		user.ID,
+		user.CompanyID, // NEW: Pass company context
+		user.Email,
+		string(user.Role),
+	)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("token generation failed")
 		return nil, errors.New("internal error")
 	}
 
+	// Create session with CompanyID
 	err = s.sessionMgr.CreateSession(
 		ctx,
 		user.ID,
+		user.CompanyID, // NEW: Pass company context
 		user.Email,
 		string(user.Role),
 		tokenPair.SessionID,
@@ -257,6 +315,7 @@ func (s *AuthService) completeLogin(ctx context.Context, user *models.User, ip, 
 		return nil, errors.New("login failed")
 	}
 
+	// Update last login asynchronously
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -268,7 +327,7 @@ func (s *AuthService) completeLogin(ctx context.Context, user *models.User, ip, 
 		RefreshToken: tokenPair.RefreshToken,
 		ExpiresIn:    tokenPair.ExpiresIn,
 		TokenType:    "Bearer",
-		User:         user.ToPublic(),
+		User:         user.ToPublic(), // Already has CompanyID
 		Require2FA:   false,
 	}, nil
 }
@@ -294,6 +353,8 @@ func (s *AuthService) LogoutAll(ctx context.Context, userID uuid.UUID) error {
 	return nil
 }
 
+// ListSessions returns all active sessions for user
+// UPDATED: Now includes CompanyID in response
 func (s *AuthService) ListSessions(ctx context.Context, userID uuid.UUID) (*dto.ListSessionsResponse, error) {
 	sessions, err := s.sessionMgr.ListUserSessions(ctx, userID)
 	if err != nil {
@@ -306,6 +367,7 @@ func (s *AuthService) ListSessions(ctx context.Context, userID uuid.UUID) (*dto.
 	for i, session := range sessions {
 		response[i] = &dto.SessionResponse{
 			SessionID:    session.SessionID,
+			CompanyID:    session.CompanyID, // NEW: Include company context
 			DeviceInfo:   session.DeviceInfo,
 			IPAddress:    session.IPAddress,
 			UserAgent:    session.UserAgent,
@@ -321,11 +383,8 @@ func (s *AuthService) ListSessions(ctx context.Context, userID uuid.UUID) (*dto.
 }
 
 func (s *AuthService) DeleteSession(ctx context.Context, userID uuid.UUID, sessionID string) error {
-
-return s.sessionMgr.DeleteSession(ctx, userID, sessionID)
-
+	return s.sessionMgr.DeleteSession(ctx, userID, sessionID)
 }
-
 
 // ============================================================================
 // 2FA Management (Setup, Enable, Disable)
@@ -436,16 +495,22 @@ func (s *AuthService) Disable2FA(ctx context.Context, userID uuid.UUID, req *dto
 
 func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
 	email = strings.ToLower(strings.TrimSpace(email))
-	
+
 	// Silent fail checks
 	limited, _ := s.tokenRepo.CheckEmailRateLimit(ctx, email, 3, time.Hour)
-	if limited { return nil }
-	
+	if limited {
+		return nil
+	}
+
 	user, err := s.userRepo.GetByEmail(ctx, email)
-	if err != nil { return nil }
+	if err != nil {
+		return nil // Silent fail
+	}
 
 	token, err := utils.GenerateRandomToken(32)
-	if err != nil { return errors.New("internal error") }
+	if err != nil {
+		return errors.New("internal error")
+	}
 
 	if err := s.tokenRepo.StoreResetToken(ctx, user.ID, token, time.Hour); err != nil {
 		s.logger.Error().Err(err).Msg("failed to store reset token")
@@ -589,7 +654,7 @@ func (s *AuthService) sendVerificationEmailAsync(user *models.User) {
 func (s *AuthService) sendPasswordResetEmailAsync(user *models.User, token string) {
 	email := user.Email
 	name := user.FullName
-	
+
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
@@ -608,7 +673,7 @@ func (s *AuthService) burnRecoveryCode(ctx context.Context, user *models.User, i
 		}
 	}
 	user.TwoFactorRecoveryCodes = newCodes
-	
+
 	if err := s.userRepo.Update(ctx, user); err != nil {
 		s.logger.Error().Err(err).Str("user_id", user.ID.String()).Msg("CRITICAL: failed to burn recovery code")
 	}
