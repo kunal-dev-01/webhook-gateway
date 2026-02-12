@@ -6,18 +6,18 @@ import (
 	"fmt"
 	"sort"
 	"time"
-	stdErrors "errors"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
-	
-	"shared/errors" // Tera Shared Error Package
+
+	"shared/errors"
 )
 
-// ───────────────── Lua Scripts ─────────────────
+// ============================================================================
+// LUA SCRIPTS
+// ============================================================================
 
 const (
-	// Atomic session activity update (Sabse Important: Race condition avoid karta hai)
 	updateActivityLua = `
 local data = redis.call('GET', KEYS[1])
 if not data then return nil end
@@ -27,9 +27,6 @@ redis.call('SET', KEYS[1], cjson.encode(session), 'KEEPTTL')
 return 1
 `
 
-	// Atomic session creation with max sessions enforcement
-	// Returns: {status, current_count}
-	// Status: 1 (Success), -1 (Limit Reached)
 	createSessionWithLimitLua = `
 local current_sessions = redis.call('SCARD', KEYS[2])
 if current_sessions >= tonumber(ARGV[2]) then
@@ -43,9 +40,10 @@ return {1, current_sessions + 1}
 `
 )
 
-// ───────────────── Structs ─────────────────
+// ============================================================================
+// STRUCTS
+// ============================================================================
 
-// SessionData represents the session payload
 type SessionData struct {
 	UserID       uuid.UUID `json:"user_id"`
 	CompanyID    uuid.UUID `json:"company_id"`
@@ -66,7 +64,6 @@ type Manager struct {
 }
 
 func NewManager(client *redis.Client, maxSessions int, ttl time.Duration) *Manager {
-	// Default Max Sessions = 5 (Agar 0 pass kiya toh)
 	if maxSessions <= 0 {
 		maxSessions = 5
 	}
@@ -80,62 +77,59 @@ func NewManager(client *redis.Client, maxSessions int, ttl time.Duration) *Manag
 	}
 }
 
-// ───────────────── Key Generators ─────────────────
+// ============================================================================
+// KEY GENERATORS
+// ============================================================================
 
-func (s *Manager) sessionKey(userID uuid.UUID, sessionID string) string {
+func (m *Manager) sessionKey(userID uuid.UUID, sessionID string) string {
 	return fmt.Sprintf("auth:session:%s:%s", userID, sessionID)
 }
 
-func (s *Manager) userSessionsSetKey(userID uuid.UUID) string {
+func (m *Manager) userSessionsSetKey(userID uuid.UUID) string {
 	return fmt.Sprintf("auth:user_sessions:%s", userID)
 }
 
-// ───────────────── Core Methods ─────────────────
+// ============================================================================
+// CREATE SESSION
+// ============================================================================
 
-// CreateSession creates a new session securely using Lua
-func (s *Manager) CreateSession(ctx context.Context, data *SessionData) error {
-	data.CreatedAt = time.Now().UTC()
-	data.LastActivity = time.Now().UTC()
+func (m *Manager) CreateSession(ctx context.Context, data *SessionData) error {
+	now := time.Now().UTC()
+	data.CreatedAt = now
+	data.LastActivity = now
 
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return errors.Internal(fmt.Errorf("failed to marshal session: %w", err))
 	}
 
-	ttlSeconds := int(s.defaultTTL.Seconds())
-	keys := []string{s.sessionKey(data.UserID, data.SessionID), s.userSessionsSetKey(data.UserID)}
-	args := []interface{}{jsonData, s.maxSessions, ttlSeconds, data.SessionID}
+	keys := []string{
+		m.sessionKey(data.UserID, data.SessionID),
+		m.userSessionsSetKey(data.UserID),
+	}
+	args := []interface{}{jsonData, m.maxSessions, int(m.defaultTTL.Seconds()), data.SessionID}
 
-	// 1. Try to Create Session Atomicallly
-	// Return type []interface{} hoga kyunki Lua table return kar raha hai
-	result, err := s.client.Eval(ctx, createSessionWithLimitLua, keys, args...).Result()
+	result, err := m.client.Eval(ctx, createSessionWithLimitLua, keys, args...).Result()
 	if err != nil {
 		return errors.Internal(fmt.Errorf("redis lua error: %w", err))
 	}
 
-	// 2. Parse Lua Result
 	resultSlice, ok := result.([]interface{})
 	if !ok || len(resultSlice) < 1 {
-		return errors.Internal(fmt.Errorf("unexpected redis lua response"))
+		return errors.Internal(fmt.Errorf("unexpected redis response"))
 	}
 
 	status := int(resultSlice[0].(int64))
-
-	// 3. Handle Limit Reached (-1)
 	if status == -1 {
-		// Cleanup oldest session
-		if err := s.enforceMaxSessions(ctx, data.UserID); err != nil {
+		if err := m.enforceMaxSessions(ctx, data.UserID); err != nil {
 			return err
 		}
-		
-		// Retry Creation ONE time
-		// Retry mein hum same Lua script use kar sakte hain, ab space honi chahiye
-		retryResult, err := s.client.Eval(ctx, createSessionWithLimitLua, keys, args...).Result()
+
+		retryResult, err := m.client.Eval(ctx, createSessionWithLimitLua, keys, args...).Result()
 		if err != nil {
 			return errors.Internal(fmt.Errorf("redis retry error: %w", err))
 		}
-		
-		// Check retry result
+
 		if retrySlice, ok := retryResult.([]interface{}); ok {
 			if retryStatus := int(retrySlice[0].(int64)); retryStatus == -1 {
 				return errors.Internal(fmt.Errorf("failed to create session after cleanup"))
@@ -146,35 +140,14 @@ func (s *Manager) CreateSession(ctx context.Context, data *SessionData) error {
 	return nil
 }
 
-// UpdateActivity updates the LastActivity timestamp ATOMICALLY
-func (s *Manager) UpdateActivity(ctx context.Context, userID uuid.UUID, sessionID string) error {
-	key := s.sessionKey(userID, sessionID)
-	// Go ki time format RFC3339 standard JSON ke saath compatible hai
-	nowStr := time.Now().UTC().Format(time.RFC3339Nano)
+// ============================================================================
+// GET SESSION
+// ============================================================================
 
-	// Direct Lua Call - No Get/Set roundtrip needed from Go
-	res, err := s.client.Eval(ctx, updateActivityLua, []string{key}, nowStr).Result()
-	
+func (m *Manager) GetSession(ctx context.Context, userID uuid.UUID, sessionID string) (*SessionData, error) {
+	data, err := m.client.Get(ctx, m.sessionKey(userID, sessionID)).Bytes()
 	if err != nil {
 		if err == redis.Nil {
-			return errors.NotFound("Session not found")
-		}
-		return errors.Internal(fmt.Errorf("redis update activity error: %w", err))
-	}
-
-	// Agar Lua ne nil return kiya (matlab key nahi mili)
-	if res == nil {
-		return errors.NotFound("Session expired or invalid")
-	}
-
-	return nil
-}
-
-// GetSession retrieves a session (Standard Get)
-func (s *Manager) GetSession(ctx context.Context, userID uuid.UUID, sessionID string) (*SessionData, error) {
-	data, err := s.client.Get(ctx, s.sessionKey(userID, sessionID)).Bytes()
-	if err != nil {
-		if stdErrors.Is(err, redis.Nil) {
 			return nil, errors.NotFound("Session expired or invalid")
 		}
 		return nil, errors.Internal(err)
@@ -187,12 +160,38 @@ func (s *Manager) GetSession(ctx context.Context, userID uuid.UUID, sessionID st
 	return &session, nil
 }
 
-// RevokeSession removes a specific session
-func (s *Manager) RevokeSession(ctx context.Context, userID uuid.UUID, sessionID string) error {
-	pipe := s.client.Pipeline()
-	pipe.Del(ctx, s.sessionKey(userID, sessionID))
-	pipe.SRem(ctx, s.userSessionsSetKey(userID), sessionID)
-	
+// ============================================================================
+// UPDATE ACTIVITY
+// ============================================================================
+
+func (m *Manager) UpdateActivity(ctx context.Context, userID uuid.UUID, sessionID string) error {
+	key := m.sessionKey(userID, sessionID)
+	nowStr := time.Now().UTC().Format(time.RFC3339Nano)
+
+	res, err := m.client.Eval(ctx, updateActivityLua, []string{key}, nowStr).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return errors.NotFound("Session not found")
+		}
+		return errors.Internal(fmt.Errorf("redis update activity error: %w", err))
+	}
+
+	if res == nil {
+		return errors.NotFound("Session expired or invalid")
+	}
+
+	return nil
+}
+
+// ============================================================================
+// REVOKE SESSIONS
+// ============================================================================
+
+func (m *Manager) RevokeSession(ctx context.Context, userID uuid.UUID, sessionID string) error {
+	pipe := m.client.Pipeline()
+	pipe.Del(ctx, m.sessionKey(userID, sessionID))
+	pipe.SRem(ctx, m.userSessionsSetKey(userID), sessionID)
+
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return errors.Internal(fmt.Errorf("failed to revoke session: %w", err))
@@ -200,12 +199,10 @@ func (s *Manager) RevokeSession(ctx context.Context, userID uuid.UUID, sessionID
 	return nil
 }
 
-// RevokeAllSessions removes all sessions for a user
-func (s *Manager) RevokeAllSessions(ctx context.Context, userID uuid.UUID) error {
-	setKey := s.userSessionsSetKey(userID)
-	
-	// Get all session IDs
-	sessionIDs, err := s.client.SMembers(ctx, setKey).Result()
+func (m *Manager) RevokeAllSessions(ctx context.Context, userID uuid.UUID) error {
+	setKey := m.userSessionsSetKey(userID)
+
+	sessionIDs, err := m.client.SMembers(ctx, setKey).Result()
 	if err != nil {
 		return errors.Internal(err)
 	}
@@ -214,12 +211,12 @@ func (s *Manager) RevokeAllSessions(ctx context.Context, userID uuid.UUID) error
 		return nil
 	}
 
-	pipe := s.client.Pipeline()
+	pipe := m.client.Pipeline()
 	for _, sid := range sessionIDs {
-		pipe.Del(ctx, s.sessionKey(userID, sid))
+		pipe.Del(ctx, m.sessionKey(userID, sid))
 	}
 	pipe.Del(ctx, setKey)
-	
+
 	_, err = pipe.Exec(ctx)
 	if err != nil {
 		return errors.Internal(fmt.Errorf("failed to revoke all sessions: %w", err))
@@ -227,46 +224,61 @@ func (s *Manager) RevokeAllSessions(ctx context.Context, userID uuid.UUID) error
 	return nil
 }
 
-// ───────────────── Internal Helpers ─────────────────
+// ============================================================================
+// HELPERS
+// ============================================================================
 
-// enforceMaxSessions removes the oldest session (LRU)
-func (s *Manager) enforceMaxSessions(ctx context.Context, userID uuid.UUID) error {
-	setKey := s.userSessionsSetKey(userID)
-	sessionIDs, err := s.client.SMembers(ctx, setKey).Result()
+func (m *Manager) enforceMaxSessions(ctx context.Context, userID uuid.UUID) error {
+	setKey := m.userSessionsSetKey(userID)
+	sessionIDs, err := m.client.SMembers(ctx, setKey).Result()
 	if err != nil {
 		return errors.Internal(err)
 	}
 
-	// Agar current sessions Max se kam hain, toh kuch karne ki zarurat nahi
-	// Lekin agar hum yahan aaye hain, matlab limit hit hui hai.
-	
 	var sessions []SessionData
 	for _, sid := range sessionIDs {
-		sess, err := s.GetSession(ctx, userID, sid)
+		sess, err := m.GetSession(ctx, userID, sid)
 		if err == nil {
 			sessions = append(sessions, *sess)
 		} else {
-			// Orphaned ID in set
-			s.client.SRem(ctx, setKey, sid)
+			m.client.SRem(ctx, setKey, sid)
 		}
 	}
 
-	// Sort by LastActivity (Oldest First)
 	sort.Slice(sessions, func(i, j int) bool {
 		return sessions[i].LastActivity.Before(sessions[j].LastActivity)
 	})
 
-	// Delete oldest until we have space (Target: Max - 1)
-	// Example: Max=5, Current=5. Delete 1 -> Count=4. New one adds -> Count=5.
-	// Agar race condition ki wajah se 6 hogaye, toh loop handle kar lega.
 	currentCount := len(sessions)
-	sessionsToDelete := currentCount - (s.maxSessions - 1)
+	sessionsToDelete := currentCount - (m.maxSessions - 1)
 
 	if sessionsToDelete > 0 {
-		for i := range sessionsToDelete {
-			_ = s.RevokeSession(ctx, userID, sessions[i].SessionID)
+		for i := 0; i < sessionsToDelete; i++ {
+			_ = m.RevokeSession(ctx, userID, sessions[i].SessionID)
 		}
 	}
 
 	return nil
+}
+
+func (m *Manager) GetAllSessions(ctx context.Context, userID uuid.UUID) ([]SessionData, error) {
+	setKey := m.userSessionsSetKey(userID)
+	sessionIDs, err := m.client.SMembers(ctx, setKey).Result()
+	if err != nil {
+		return nil, errors.Internal(err)
+	}
+
+	var sessions []SessionData
+	for _, sid := range sessionIDs {
+		sess, err := m.GetSession(ctx, userID, sid)
+		if err == nil {
+			sessions = append(sessions, *sess)
+		}
+	}
+
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].LastActivity.After(sessions[j].LastActivity)
+	})
+
+	return sessions, nil
 }

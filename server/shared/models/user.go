@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
-	"golang.org/x/crypto/bcrypt"
 
 	"shared/utils"
 )
@@ -167,53 +166,30 @@ type User struct {
 	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
 }
 
+
 // ============================================================================
 // PASSWORD METHODS
 // ============================================================================
 
-const bcryptCost = 12 // Production recommended
-
 // SetPassword hashes and sets the user's password
 func (u *User) SetPassword(password string) error {
-	if err := ValidatePassword(password); err != nil {
+	if err := utils.ValidatePasswordSimple(password); err != nil {
 		return err
 	}
 	
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
+	hash, err := utils.HashPassword(password)
 	if err != nil {
-		return fmt.Errorf("failed to hash password: %w", err)
+		return err
 	}
 	
-	u.PasswordHash = string(hash)
+	u.PasswordHash = hash
 	u.PasswordChangedAt = time.Now()
 	return nil
 }
 
 // CheckPassword verifies if the provided password matches the hash
 func (u *User) CheckPassword(password string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password))
-	return err == nil
-}
-
-// ValidatePassword validates password strength
-func ValidatePassword(password string) error {
-	if len(password) < 8 {
-		return fmt.Errorf("password must be at least 8 characters")
-	}
-	if len(password) > 72 { // bcrypt limit
-		return fmt.Errorf("password must be less than 72 characters")
-	}
-	
-	// Check for at least one number
-	hasNumber := regexp.MustCompile(`[0-9]`).MatchString(password)
-	// Check for at least one letter
-	hasLetter := regexp.MustCompile(`[a-zA-Z]`).MatchString(password)
-	
-	if !hasNumber || !hasLetter {
-		return fmt.Errorf("password must contain both letters and numbers")
-	}
-	
-	return nil
+	return utils.CheckPassword(password, u.PasswordHash)
 }
 
 // ============================================================================
@@ -442,17 +418,19 @@ func (u *User) Restore() error {
 
 // Validate validates the user struct
 func (u *User) Validate() error {
-	if u.Email == "" {
-		return fmt.Errorf("email is required")
+	if err := utils.ValidateRequired(u.Email, "email"); err != nil {
+		return err
 	}
-	if !utils.IsValidEmail(u.Email) {
-		return fmt.Errorf("invalid email format")
+	if err := utils.ValidateEmail(u.Email); err != nil {
+		return err
 	}
-	if u.FullName == "" {
-		return fmt.Errorf("full name is required")
+	if err := utils.ValidateRequired(u.FullName, "full name"); err != nil {
+		return err
 	}
-	if u.Phone != nil && *u.Phone != "" && !utils.IsValidIndianPhone(*u.Phone) {
-		return fmt.Errorf("invalid phone number format")
+	if u.Phone != nil && *u.Phone != "" {
+		if err := utils.ValidateIndianPhone(*u.Phone); err != nil {
+			return err
+		}
 	}
 	if u.CompanyID == uuid.Nil {
 		return fmt.Errorf("company ID is required")
