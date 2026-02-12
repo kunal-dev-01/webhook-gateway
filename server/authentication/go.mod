@@ -2,4 +2,15 @@ module authentication
 
 go 1.25.5
 
-require github.com/lib/pq v1.11.2
+require (
+	github.com/google/uuid v1.6.0
+	github.com/lib/pq v1.11.2
+	github.com/pquerna/otp v1.5.0
+	github.com/redis/go-redis/v9 v9.17.3
+)
+
+require (
+	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
+)
