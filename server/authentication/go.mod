@@ -2,4 +2,4 @@ module authentication
 
 go 1.25.5
 
-replace shared => ../shared
+require github.com/lib/pq v1.11.2
