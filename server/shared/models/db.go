@@ -1,6 +1,7 @@
 package models
 
 import (
+	"strings"
 	"context"
 	"database/sql"
 	"fmt"
@@ -104,7 +105,7 @@ func (db *DB) Stats() sql.DBStats {
 }
 
 // ExecuteWithTimeout executes query with timeout
-func (db *DB) ExecuteWithTimeout(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+func (db *DB) ExecuteWithTimeout(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, db.Config.QueryTimeout)
 	defer cancel()
 
@@ -112,7 +113,7 @@ func (db *DB) ExecuteWithTimeout(ctx context.Context, query string, args ...inte
 }
 
 // QueryWithTimeout executes query with timeout
-func (db *DB) QueryWithTimeout(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+func (db *DB) QueryWithTimeout(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	ctx, cancel := context.WithTimeout(ctx, db.Config.QueryTimeout)
 	defer cancel()
 
@@ -120,7 +121,7 @@ func (db *DB) QueryWithTimeout(ctx context.Context, query string, args ...interf
 }
 
 // QueryRowWithTimeout executes single row query with timeout
-func (db *DB) QueryRowWithTimeout(ctx context.Context, query string, args ...interface{}) *sql.Row {
+func (db *DB) QueryRowWithTimeout(ctx context.Context, query string, args ...any) *sql.Row {
 	ctx, cancel := context.WithTimeout(ctx, db.Config.QueryTimeout)
 	defer cancel()
 
@@ -156,7 +157,7 @@ func (db *DB) Transaction(ctx context.Context, fn func(*sql.Tx) error) error {
 }
 
 // BulkInsert performs optimized bulk insert
-func (db *DB) BulkInsert(ctx context.Context, table string, columns []string, values [][]interface{}) error {
+func (db *DB) BulkInsert(ctx context.Context, table string, columns []string, values [][]any) error {
 	if len(values) == 0 {
 		return nil
 	}
@@ -180,22 +181,22 @@ func (db *DB) BulkInsert(ctx context.Context, table string, columns []string, va
 
 // Helper: Build bulk insert query
 func buildBulkInsertQuery(table string, columns []string, valueCount int) string {
-	query := fmt.Sprintf("INSERT INTO %s (", table)
+	var query strings.Builder; query.WriteString(fmt.Sprintf("INSERT INTO %s (", table))
 	for i, col := range columns {
 		if i > 0 {
-			query += ", "
+			query .WriteString(", ")
 		}
-		query += col
+		query .WriteString(col)
 	}
-	query += ") VALUES ("
-	for i := 0; i < valueCount; i++ {
+	query .WriteString(") VALUES (")
+	for i := range valueCount {
 		if i > 0 {
-			query += ", "
+			query .WriteString(", ")
 		}
-		query += fmt.Sprintf("$%d", i+1)
+		query .WriteString(fmt.Sprintf("$%d", i+1))
 	}
-	query += ")"
-	return query
+	query .WriteString(")")
+	return query.String()
 }
 
 // LogConnectionStats logs database statistics

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -18,6 +19,7 @@ type Config struct {
 	Frontend FrontendConfig
 	AWS      AWSConfig
 	App      AppConfig
+	Logger   LoggerConfig
 }
 
 type DatabaseConfig struct {
@@ -102,9 +104,9 @@ type SecurityConfig struct {
 }
 
 type FrontendConfig struct {
-	FrontendUrl string
+	FrontendUrl     string
 	VerificationUrl string
-	ResetUrl    string
+	ResetUrl        string
 }
 
 type AWSConfig struct {
@@ -118,6 +120,45 @@ type AWSConfig struct {
 type AppConfig struct {
 	Env  string
 	Port string
+	
+	// Server Timeouts
+	RequestBodyLimit int           // Max request body size in bytes
+	ReadTimeout      time.Duration // Request read timeout
+	WriteTimeout     time.Duration // Response write timeout
+	IdleTimeout      time.Duration // Keep-alive timeout
+	
+	// Security
+	TrustedProxies []string // Trusted proxy IPs (for X-Forwarded-For)
+	AllowedOrigins []string // CORS allowed origins
+	
+	// Features
+	EnableMetrics bool
+	EnableHealth  bool
+}
+
+type LoggerConfig struct {
+	// Log Level
+	Level string // "trace", "debug", "info", "warn", "error", "fatal", "panic"
+	
+	// Output
+	EnableConsole bool
+	EnableFile    bool
+	FilePath      string
+	
+	// File Rotation
+	MaxSize    int  // Maximum size in MB before rotation
+	MaxBackups int  // Maximum number of old log files to retain
+	MaxAge     int  // Maximum number of days to retain old log files
+	Compress   bool // Compress old log files
+	
+	// Performance
+	EnableSampling  bool
+	SamplingInitial int // Log first N of each level
+	SamplingThereafter int // Then 1 every N
+	
+	// Features
+	EnableCaller     bool // Add file:line to logs
+	EnableStackTrace bool // Add stack trace on error/fatal
 }
 
 // Load reads configuration from environment variables
@@ -190,9 +231,9 @@ func Load() (*Config, error) {
 			RateLimitMax:     getEnvAsInt("RATE_LIMIT_MAX", 100),
 		},
 		Frontend: FrontendConfig{
-			FrontendUrl: getEnv("FRONTEND_URL", "http://localhost:4321"),
+			FrontendUrl:     getEnv("FRONTEND_URL", "http://localhost:4321"),
 			VerificationUrl: getEnv("VERIFICATION_URL", "http://localhost:4321/auth/verify"),
-			ResetUrl:    getEnv("RESET_URL", "http://localhost:4321/auth/reset"),
+			ResetUrl:        getEnv("RESET_URL", "http://localhost:4321/auth/reset"),
 		},
 		AWS: AWSConfig{
 			AWSAccessKey:   getEnv("AWS_ACCESS_KEY_ID", ""),
@@ -202,8 +243,31 @@ func Load() (*Config, error) {
 			AWSFromEmail:   getEnv("AWS_FROM_EMAIL", ""),
 		},
 		App: AppConfig{
-			Env:  getEnv("APP_ENV", "development"),
-			Port: getEnv("APP_PORT", "8080"),
+			Env:              getEnv("APP_ENV", "development"),
+			Port:             getEnv("APP_PORT", "8080"),
+			RequestBodyLimit: getEnvAsInt("REQUEST_BODY_LIMIT", 10*1024*1024), // 10MB default
+			ReadTimeout:      getEnvAsDuration("READ_TIMEOUT", 10*time.Second),
+			WriteTimeout:     getEnvAsDuration("WRITE_TIMEOUT", 10*time.Second),
+			IdleTimeout:      getEnvAsDuration("IDLE_TIMEOUT", 120*time.Second),
+			TrustedProxies:   getEnvAsSlice("TRUSTED_PROXIES", []string{"127.0.0.1"}),
+			AllowedOrigins:   getEnvAsSlice("ALLOWED_ORIGINS", []string{"*"}),
+			EnableMetrics:    getEnvAsBool("ENABLE_METRICS", true),
+			EnableHealth:     getEnvAsBool("ENABLE_HEALTH", true),
+		},
+		Logger: LoggerConfig{
+			Level:              getEnv("LOG_LEVEL", "info"),
+			EnableConsole:      getEnvAsBool("LOG_ENABLE_CONSOLE", true),
+			EnableFile:         getEnvAsBool("LOG_ENABLE_FILE", false),
+			FilePath:           getEnv("LOG_FILE_PATH", "/var/log/app/app.log"),
+			MaxSize:            getEnvAsInt("LOG_MAX_SIZE", 100),
+			MaxBackups:         getEnvAsInt("LOG_MAX_BACKUPS", 10),
+			MaxAge:             getEnvAsInt("LOG_MAX_AGE", 30),
+			Compress:           getEnvAsBool("LOG_COMPRESS", true),
+			EnableSampling:     getEnvAsBool("LOG_ENABLE_SAMPLING", false),
+			SamplingInitial:    getEnvAsInt("LOG_SAMPLING_INITIAL", 10),
+			SamplingThereafter: getEnvAsInt("LOG_SAMPLING_THEREAFTER", 100),
+			EnableCaller:       getEnvAsBool("LOG_ENABLE_CALLER", false),
+			EnableStackTrace:   getEnvAsBool("LOG_ENABLE_STACKTRACE", true),
 		},
 	}
 
@@ -232,10 +296,17 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("REDIS_PASSWORD is required in production")
 	}
 
+	// Validate log level
+	validLevels := []string{"trace", "debug", "info", "warn", "error", "fatal", "panic"}
+	if !contains(validLevels, cfg.Logger.Level) {
+		return nil, fmt.Errorf("LOG_LEVEL must be one of: %v", validLevels)
+	}
+
 	return cfg, nil
 }
 
-// Helper functions (same as before)
+/* ───────────────── Helper Functions ───────────────── */
+
 func getEnv(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -270,6 +341,33 @@ func getEnvAsDuration(key string, fallback time.Duration) time.Duration {
 	return fallback
 }
 
+func getEnvAsSlice(key string, fallback []string) []string {
+	if value := os.Getenv(key); value != "" {
+		// Split by comma and trim spaces
+		parts := strings.Split(value, ",")
+		result := make([]string, 0, len(parts))
+		for _, part := range parts {
+			trimmed := strings.TrimSpace(part)
+			if trimmed != "" {
+				result = append(result, trimmed)
+			}
+		}
+		return result
+	}
+	return fallback
+}
+
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
+/* ───────────────── DSN Builders ───────────────── */
+
 // GetDSN builds PostgreSQL connection string
 func (c *DatabaseConfig) GetDSN() string {
 	dsn := fmt.Sprintf(
@@ -299,4 +397,21 @@ func (c *DatabaseConfig) GetDSN() string {
 // GetRedisAddr returns Redis address
 func (c *RedisConfig) GetRedisAddr() string {
 	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+}
+
+/* ───────────────── Environment-Specific Helpers ───────────────── */
+
+// IsDevelopment checks if running in development mode
+func (c *AppConfig) IsDevelopment() bool {
+	return c.Env == "development"
+}
+
+// IsProduction checks if running in production mode
+func (c *AppConfig) IsProduction() bool {
+	return c.Env == "production"
+}
+
+// IsStaging checks if running in staging mode
+func (c *AppConfig) IsStaging() bool {
+	return c.Env == "staging"
 }
