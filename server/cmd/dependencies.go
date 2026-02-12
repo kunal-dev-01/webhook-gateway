@@ -35,6 +35,7 @@ type Dependencies struct {
 	// Repositories
 	UserRepo  *repository.UserRepository
 	TokenRepo *repository.TokenRepository
+	CompanyRepo *repository.CompanyRepository
 
 	// Managers
 	JWTManager  *auth.TokenManager // ✅ Field Name is JWTManager
@@ -104,13 +105,15 @@ func InitDependencies() (*Dependencies, error) {
 
 	// 6. Repositories
 	userRepo := repository.NewUserRepository(db)
-	tokenRepo := repository.NewTokenRepository(redis.Client) // Pass raw client
+	tokenRepo := repository.NewTokenRepository(redis.Client) 
+	companyRepo := repository.NewCompanyRepository(db)
+
 
 	// 7. Services
 	authService := services.NewAuthService(
-		userRepo, tokenRepo, jwtManager, totpManager, sessionMgr, emailService, cfg, logger,
+		userRepo, companyRepo, tokenRepo, jwtManager, totpManager, sessionMgr, emailService, cfg, logger,
 	)
-	userService := services.NewUserService(userRepo)
+	userService := services.NewUserService(userRepo, logger)
 
 	// 8. Handlers
 	authHandler := handlers.NewAuthHandler(authService)
@@ -123,6 +126,7 @@ func InitDependencies() (*Dependencies, error) {
 		Logger:       logger,
 		UserRepo:     userRepo,
 		TokenRepo:    tokenRepo,
+		CompanyRepo:  companyRepo,
 		JWTManager:   jwtManager,
 		TOTPManager:  totpManager,
 		SessionMgr:   sessionMgr,
