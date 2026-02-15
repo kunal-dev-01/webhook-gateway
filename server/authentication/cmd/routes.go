@@ -1,1 +1,63 @@
 package main
+
+import (
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"shared/middleware"
+)
+
+func SetupRoutes(app *fiber.App, deps *Dependencies) {
+	// Create auth middleware
+	authMiddleware := middleware.NewAuthMiddleware(deps.JWTManager, deps.Redis.Client)
+	
+	// Rate limiter
+	rateLimiter := middleware.NewRateLimiter(deps.Redis.Client)
+
+	// API v1 Group
+	v1 := app.Group("/api/v1")
+
+	// ============================================================================
+	// PUBLIC AUTH ROUTES (No authentication required)
+	// ============================================================================
+	auth := v1.Group("/auth")
+	{
+		// Rate limit: 10 requests per minute for auth endpoints
+		authRateLimit := rateLimiter.Middleware(middleware.RateLimitConfig{
+			RequestsPerWindow: 10,
+			WindowDuration:    60 * time.Second,
+			BypassPaths:       []string{"/api/v1/auth/verify-email"},
+		})
+
+		auth.Use(authRateLimit)
+		
+		// Registration & Email Verification
+		auth.Post("/register", deps.AuthHandler.Register)
+		auth.Post("/verify-email", deps.AuthHandler.VerifyEmail)
+		auth.Post("/resend-verification", deps.AuthHandler.ResendVerificationEmail)
+		
+		// Password Reset
+		auth.Post("/forgot-password", deps.AuthHandler.ForgotPassword)
+		auth.Post("/reset-password", deps.AuthHandler.ResetPassword)
+	}
+
+	// ============================================================================
+	// PROTECTED ROUTES (Authentication required)
+	// ============================================================================
+	protected := v1.Group("")
+	protected.Use(authMiddleware.RequireAuth())
+	{
+		// Password Management
+		protected.Post("/auth/change-password", deps.AuthHandler.ChangePassword)
+		
+		// Logout
+		protected.Post("/auth/logout", deps.AuthHandler.Logout)
+
+		// Session Management
+		sessions := protected.Group("/sessions")
+		{
+			sessions.Get("/", deps.AuthHandler.GetActiveSessions)
+			sessions.Delete("/:session_id", deps.AuthHandler.RevokeSession)
+		}
+	}
+}
