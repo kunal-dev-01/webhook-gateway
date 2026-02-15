@@ -16,7 +16,7 @@ import (
 
 type AuthService struct {
 	userRepo *repository.UserRepository
-	companyRepo *repository.CompanyRepository
+	organizationRepo *repository.OrganizationRepository
 	tokenRepo *repository.TokenRepository
 	sessionMgr *utils.Manager
 	emailService *utils.EmailService
@@ -27,7 +27,7 @@ type AuthService struct {
 
 func NewAuthService(
 	userRepo *repository.UserRepository,
-	companyRepo *repository.CompanyRepository,
+	organizationRepo *repository.OrganizationRepository,
 	tokenRepo *repository.TokenRepository,
 	sessionMgr *utils.Manager,
 	emailService *utils.EmailService,
@@ -37,7 +37,7 @@ func NewAuthService(
 ) *AuthService {
 	return &AuthService{
 		userRepo : userRepo,
-		companyRepo : companyRepo,
+		organizationRepo : organizationRepo,
 		tokenRepo : tokenRepo,
 		sessionMgr : sessionMgr,
 		emailService : emailService,
@@ -73,15 +73,6 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) er
 
 	if exists {
 		return errors.BadRequest("User already exists")
-	}
-
-	companyExists , err := s.companyRepo.ExistsByName(ctx, req.CompanyName)
-	if err != nil {
-		return errors.Internal(err)
-	}
-
-	if companyExists {
-		return errors.BadRequest("Company already exists")
 	}
 
 	return nil

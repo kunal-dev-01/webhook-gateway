@@ -13,14 +13,14 @@ import (
 // ============================================================================
 
 type RegisterRequest struct {
-	CompanyName string `json:"company_name" validate:"required,min=2,max=100"`
-	FullName    string `json:"full_name" validate:"required,min=2,max=100"`
-	Email       string `json:"email" validate:"required,email"`
-	Password    string `json:"password" validate:"required,min=8,max=72"`
+	FullName string `json:"full_name" validate:"required,min=2,max=255"`
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required,min=8,max=72"`
 }
 
 type RegisterResponse struct {
-	Message string `json:"message"`
+	Message string        `json:"message"`
+	User    *UserResponse `json:"user"`
 }
 
 // ============================================================================
@@ -34,11 +34,10 @@ type LoginRequest struct {
 
 type LoginResponse struct {
 	// If 2FA is DISABLED
-	User         *UserResponse        `json:"user,omitempty"`
-	Preferences  *PreferencesResponse `json:"preferences,omitempty"`
-	AccessToken  string               `json:"access_token,omitempty"`
-	RefreshToken string               `json:"refresh_token,omitempty"`
-	ExpiresIn    int64                `json:"expires_in,omitempty"`
+	User         *UserResponse `json:"user,omitempty"`
+	AccessToken  string        `json:"access_token,omitempty"`
+	RefreshToken string        `json:"refresh_token,omitempty"`
+	ExpiresIn    int64         `json:"expires_in,omitempty"`
 
 	// If 2FA is ENABLED
 	TwoFactorRequired bool   `json:"two_factor_required"`
@@ -46,21 +45,36 @@ type LoginResponse struct {
 }
 
 // ============================================================================
+// ORGANIZATION SELECTION (After Login)
+// ============================================================================
+
+type SelectOrganizationRequest struct {
+	OrganizationID uuid.UUID `json:"organization_id" validate:"required"`
+}
+
+type SelectOrganizationResponse struct {
+	User         *UserResponse         `json:"user"`
+	Organization *OrganizationResponse `json:"organization"`
+	AccessToken  string                `json:"access_token"`
+	RefreshToken string                `json:"refresh_token"`
+	ExpiresIn    int64                 `json:"expires_in"`
+}
+
+// ============================================================================
 // 2FA VERIFICATION
 // ============================================================================
 
 type TwoFactorVerifyRequest struct {
-	TempToken    string `json:"temp_token" validate:"required"`
-	Code         string `json:"code" validate:"required"`         // TOTP code or recovery code
-	IsRecovery   bool   `json:"is_recovery"`                      // true if using recovery code
+	TempToken  string `json:"temp_token" validate:"required"`
+	Code       string `json:"code" validate:"required,len=6"` // TOTP code
+	IsRecovery bool   `json:"is_recovery"`                    // true if using backup code
 }
 
 type TwoFactorVerifyResponse struct {
-	User         *UserResponse        `json:"user"`
-	Preferences  *PreferencesResponse `json:"preferences"`
-	AccessToken  string               `json:"access_token"`
-	RefreshToken string               `json:"refresh_token"`
-	ExpiresIn    int64                `json:"expires_in"`
+	User         *UserResponse `json:"user"`
+	AccessToken  string        `json:"access_token"`
+	RefreshToken string        `json:"refresh_token"`
+	ExpiresIn    int64         `json:"expires_in"`
 }
 
 // ============================================================================
@@ -132,8 +146,8 @@ type ChangePasswordResponse struct {
 // ============================================================================
 
 type Enable2FAResponse struct {
-	QRCodeURL     string   `json:"qr_code_url"`
-	Secret        string   `json:"secret"`         // For manual entry
+	QRCodeURL string `json:"qr_code_url"`
+	Secret    string `json:"secret"` // For manual entry
 }
 
 type Confirm2FARequest struct {
@@ -141,24 +155,25 @@ type Confirm2FARequest struct {
 }
 
 type Confirm2FAResponse struct {
-	Message       string   `json:"message"`
-	RecoveryCodes []string `json:"recovery_codes"`
+	Message      string   `json:"message"`
+	BackupCodes  []string `json:"backup_codes"` // Show once, user must save
 }
 
 type Disable2FARequest struct {
 	Password string `json:"password" validate:"required"` // Require password for security
+	Code     string `json:"code" validate:"required,len=6"` // Current 2FA code
 }
 
 type Disable2FAResponse struct {
 	Message string `json:"message"`
 }
 
-type Regenerate2FARecoveryCodesRequest struct {
+type RegenerateBackupCodesRequest struct {
 	Password string `json:"password" validate:"required"`
 }
 
-type Regenerate2FARecoveryCodesResponse struct {
-	RecoveryCodes []string `json:"recovery_codes"`
+type RegenerateBackupCodesResponse struct {
+	BackupCodes []string `json:"backup_codes"`
 }
 
 // ============================================================================
@@ -166,8 +181,7 @@ type Regenerate2FARecoveryCodesResponse struct {
 // ============================================================================
 
 type LogoutRequest struct {
-	SessionID string `json:"session_id,omitempty"` // Optional: logout specific session
-	AllSessions bool `json:"all_sessions"`         // true = logout all devices
+	AllDevices bool `json:"all_devices"` // true = logout all sessions
 }
 
 type LogoutResponse struct {
@@ -175,187 +189,101 @@ type LogoutResponse struct {
 }
 
 // ============================================================================
-// USER RESPONSE (for auth responses)
+// SWITCH ORGANIZATION
 // ============================================================================
 
+type SwitchOrganizationRequest struct {
+	OrganizationID uuid.UUID `json:"organization_id" validate:"required"`
+}
+
+type SwitchOrganizationResponse struct {
+	Organization *OrganizationResponse `json:"organization"`
+	AccessToken  string                `json:"access_token"`
+	RefreshToken string                `json:"refresh_token"`
+	ExpiresIn    int64                 `json:"expires_in"`
+}
+
+// ============================================================================
+// GET CURRENT USER
+// ============================================================================
+
+type GetMeResponse struct {
+	User         *UserResponse         `json:"user"`
+	Organization *OrganizationResponse `json:"organization"` // Current active organization
+}
+
+// ============================================================================
+// RESPONSE MODELS
+// ============================================================================
+
+// UserResponse represents user data in auth responses
 type UserResponse struct {
-	ID               uuid.UUID              `json:"id"`
-	CompanyID        uuid.UUID              `json:"company_id"`
-	Email            string                 `json:"email"`
-	FullName         string                 `json:"full_name"`
-	Phone            *string                `json:"phone,omitempty"`
-	Role             models.UserRole        `json:"role"`
-	Department       *string                `json:"department,omitempty"`
-	Designation      *string                `json:"designation,omitempty"`
-	AvatarURL        *string                `json:"avatar_url,omitempty"`
-	Status           models.UserStatus      `json:"status"`
-	EmailVerified    bool                   `json:"email_verified"`
-	TwoFactorEnabled bool                   `json:"two_factor_enabled"`
-	LastLoginAt      *time.Time             `json:"last_login_at,omitempty"`
-	Permissions      models.Permissions     `json:"permissions"`
-	Timezone         string                 `json:"timezone"`
-	Language         string                 `json:"language"`
-	CreatedAt        time.Time              `json:"created_at"`
+	ID                   uuid.UUID               `json:"id"`
+	Email                string                  `json:"email"`
+	FullName             string                  `json:"full_name"`
+	AvatarURL            *string                 `json:"avatar_url,omitempty"`
+	EmailVerified        bool                    `json:"email_verified"`
+	TwoFactorEnabled     bool                    `json:"two_factor_enabled"`
+	TwoFactorConfirmedAt *time.Time              `json:"two_factor_confirmed_at,omitempty"`
+	Preferences          models.UserPreferences  `json:"preferences"`
+	CreatedAt            time.Time               `json:"created_at"`
 }
 
-type PreferencesResponse struct {
-	Theme                ThemeResponse              `json:"theme"`
-	Notifications        NotificationSettingsResponse `json:"notifications"`
-	Dashboard            DashboardSettingsResponse   `json:"dashboard"`
-	Privacy              PrivacySettingsResponse     `json:"privacy"`
-	Accessibility        AccessibilitySettingsResponse `json:"accessibility"`
-	Language             string                      `json:"language"`
-	Timezone             string                      `json:"timezone"`
-	DateFormat           string                      `json:"date_format"`
-	TimeFormat           string                      `json:"time_format"`
-	Currency             string                      `json:"currency"`
-	CompactMode          bool                        `json:"compact_mode"`
-	SidebarCollapsed     bool                        `json:"sidebar_collapsed"`
-	EmailDigestFrequency string                      `json:"email_digest_frequency"`
-}
-
-type ThemeResponse struct {
-	Mode string `json:"mode"` // light, dark, auto
-}
-
-type NotificationSettingsResponse struct {
-	Email NotificationChannelResponse `json:"email"`
-	Push  NotificationChannelResponse `json:"push"`
-	InApp InAppNotificationsResponse  `json:"in_app"`
-	SMS   NotificationChannelResponse `json:"sms"`
-}
-
-type NotificationChannelResponse struct {
-	Enabled bool            `json:"enabled"`
-	Digest  string          `json:"digest,omitempty"`
-	Events  map[string]bool `json:"events"`
-}
-
-type InAppNotificationsResponse struct {
-	Enabled              bool `json:"enabled"`
-	Sound                bool `json:"sound"`
-	DesktopNotifications bool `json:"desktop_notifications"`
-}
-
-type DashboardSettingsResponse struct {
-	Widgets     []DashboardWidgetResponse `json:"widgets"`
-	DefaultView string                    `json:"default_view"`
-	ShowTips    bool                      `json:"show_tips"`
-}
-
-type DashboardWidgetResponse struct {
-	ID      string `json:"id"`
-	Enabled bool   `json:"enabled"`
-	Order   int    `json:"order"`
-}
-
-type PrivacySettingsResponse struct {
-	ShowProfilePicture bool `json:"show_profile_picture"`
-	ShowPhone          bool `json:"show_phone"`
-	ShowEmail          bool `json:"show_email"`
-	ShowBirthday       bool `json:"show_birthday"`
-	AllowMentions      bool `json:"allow_mentions"`
-}
-
-type AccessibilitySettingsResponse struct {
-	HighContrast      bool   `json:"high_contrast"`
-	ReduceMotion      bool   `json:"reduce_motion"`
-	ScreenReader      bool   `json:"screen_reader"`
-	FontSize          string `json:"font_size"`
-	KeyboardShortcuts bool   `json:"keyboard_shortcuts"`
+// OrganizationResponse represents organization data in auth responses
+type OrganizationResponse struct {
+	ID                 uuid.UUID              `json:"id"`
+	Name               string                 `json:"name"`
+	Slug               string                 `json:"slug"`
+	OwnerID            uuid.UUID              `json:"owner_id"`
+	Role               string                 `json:"role"` // User's role in this org
+	PlanTier           models.PlanTier        `json:"plan_tier"`
+	BillingPeriod      models.BillingPeriod   `json:"billing_period"`
+	SubscriptionStatus models.SubscriptionStatus `json:"subscription_status"`
+	MonthlyEventsLimit int64                  `json:"monthly_events_limit"`
+	MonthlyEventsUsed  int64                  `json:"monthly_events_used"`
+	RetentionDays      int                    `json:"retention_days"`
+	TeamSeatsLimit     int                    `json:"team_seats_limit"`
+	RateLimitPerSecond int                    `json:"rate_limit_per_second"`
+	ProjectsLimit      int                    `json:"projects_limit"`
+	CreatedAt          time.Time              `json:"created_at"`
 }
 
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 
+// ToUserResponse converts User model to UserResponse DTO
 func ToUserResponse(user *models.User) *UserResponse {
 	return &UserResponse{
-		ID:               user.ID,
-		CompanyID:        user.CompanyID,
-		Email:            user.Email,
-		FullName:         user.FullName,
-		Phone:            user.Phone,
-		Role:             user.Role,
-		Department:       user.Department,
-		Designation:      user.Designation,
-		AvatarURL:        user.AvatarURL,
-		Status:           user.Status,
-		EmailVerified:    user.EmailVerified,
-		TwoFactorEnabled: user.TwoFactorEnabled,
-		LastLoginAt:      user.LastLoginAt,
-		Permissions:      user.Permissions,
-		Timezone:         user.Timezone,
-		Language:         user.Language,
-		CreatedAt:        user.CreatedAt,
+		ID:                   user.ID,
+		Email:                user.Email,
+		FullName:             user.FullName,
+		AvatarURL:            user.AvatarURL,
+		EmailVerified:        user.EmailVerified,
+		TwoFactorEnabled:     user.TwoFactorEnabled,
+		TwoFactorConfirmedAt: user.TwoFactorConfirmedAt,
+		Preferences:          user.Preferences,
+		CreatedAt:            user.CreatedAt,
 	}
 }
 
-func ToPreferencesResponse(prefs *models.UserPreferences) *PreferencesResponse {
-	return &PreferencesResponse{
-		Theme: ThemeResponse{
-			Mode: string(prefs.Theme),
-		},
-		Notifications: NotificationSettingsResponse{
-			Email: NotificationChannelResponse{
-				Enabled: prefs.Notifications.Email.Enabled,
-				Digest:  prefs.Notifications.Email.Digest,
-				Events:  prefs.Notifications.Email.Events,
-			},
-			Push: NotificationChannelResponse{
-				Enabled: prefs.Notifications.Push.Enabled,
-				Digest:  prefs.Notifications.Push.Digest,
-				Events:  prefs.Notifications.Push.Events,
-			},
-			InApp: InAppNotificationsResponse{
-				Enabled:              prefs.Notifications.InApp.Enabled,
-				Sound:                prefs.Notifications.InApp.Sound,
-				DesktopNotifications: prefs.Notifications.InApp.DesktopNotifications,
-			},
-			SMS: NotificationChannelResponse{
-				Enabled: prefs.Notifications.SMS.Enabled,
-				Digest:  prefs.Notifications.SMS.Digest,
-				Events:  prefs.Notifications.SMS.Events,
-			},
-		},
-		Dashboard: DashboardSettingsResponse{
-			Widgets:     toDashboardWidgets(prefs.Dashboard.Widgets),
-			DefaultView: prefs.Dashboard.DefaultView,
-			ShowTips:    prefs.Dashboard.ShowTips,
-		},
-		Privacy: PrivacySettingsResponse{
-			ShowProfilePicture: prefs.Privacy.ShowProfilePicture,
-			ShowPhone:          prefs.Privacy.ShowPhone,
-			ShowEmail:          prefs.Privacy.ShowEmail,
-			ShowBirthday:       prefs.Privacy.ShowBirthday,
-			AllowMentions:      prefs.Privacy.AllowMentions,
-		},
-		Accessibility: AccessibilitySettingsResponse{
-			HighContrast:      prefs.Accessibility.HighContrast,
-			ReduceMotion:      prefs.Accessibility.ReduceMotion,
-			ScreenReader:      prefs.Accessibility.ScreenReader,
-			FontSize:          prefs.Accessibility.FontSize,
-			KeyboardShortcuts: prefs.Accessibility.KeyboardShortcuts,
-		},
-		Language:             prefs.Language,
-		Timezone:             prefs.Timezone,
-		DateFormat:           prefs.DateFormat,
-		TimeFormat:           prefs.TimeFormat,
-		Currency:             prefs.Currency,
-		CompactMode:          prefs.CompactMode,
-		SidebarCollapsed:     prefs.SidebarCollapsed,
-		EmailDigestFrequency: prefs.EmailDigestFrequency,
+// ToOrganizationResponse converts Organization model to OrganizationResponse DTO
+func ToOrganizationResponse(org *models.Organization, userRole string) *OrganizationResponse {
+	return &OrganizationResponse{
+		ID:                 org.ID,
+		Name:               org.Name,
+		Slug:               org.Slug,
+		OwnerID:            org.OwnerID,
+		Role:               userRole, // User's role in this organization
+		PlanTier:           org.PlanTier,
+		BillingPeriod:      org.BillingPeriod,
+		SubscriptionStatus: org.SubscriptionStatus,
+		MonthlyEventsLimit: org.MonthlyEventsLimit,
+		MonthlyEventsUsed:  org.MonthlyEventsUsed,
+		RetentionDays:      org.RetentionDays,
+		TeamSeatsLimit:     org.TeamSeatsLimit,
+		RateLimitPerSecond: org.RateLimitPerSecond,
+		ProjectsLimit:      org.ProjectsLimit,
+		CreatedAt:          org.CreatedAt,
 	}
-}
-
-func toDashboardWidgets(widgets []models.DashboardWidget) []DashboardWidgetResponse {
-	result := make([]DashboardWidgetResponse, len(widgets))
-	for i, w := range widgets {
-		result[i] = DashboardWidgetResponse{
-			ID:      w.ID,
-			Enabled: w.Enabled,
-			Order:   w.Order,
-		}
-	}
-	return result
 }
