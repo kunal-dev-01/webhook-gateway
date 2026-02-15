@@ -16,7 +16,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/rs/zerolog"
 
 	"shared/auth"
@@ -231,9 +230,6 @@ func main() {
 	})
 
 	// Global Middleware
-	app.Use(recover.New(recover.Config{
-		EnableStackTrace: deps.Config.Logger.EnableStackTrace,
-	}))
 	
 	app.Use(deps.Logger.HTTPMiddleware())
 	app.Use(deps.Logger.RecoveryMiddleware())
