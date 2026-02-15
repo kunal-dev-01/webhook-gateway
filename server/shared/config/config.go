@@ -1,6 +1,7 @@
 package config
 
 import (
+	"slices"
 	"fmt"
 	"os"
 	"strconv"
@@ -358,12 +359,7 @@ func getEnvAsSlice(key string, fallback []string) []string {
 }
 
 func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, item)
 }
 
 /* ───────────────── DSN Builders ───────────────── */
