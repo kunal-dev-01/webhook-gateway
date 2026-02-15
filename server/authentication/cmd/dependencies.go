@@ -234,13 +234,7 @@ func main() {
 	app.Use(deps.Logger.HTTPMiddleware())
 	app.Use(deps.Logger.RecoveryMiddleware())
 	
-	app.Use(cors.New(cors.Config{
-		AllowOrigins:     getAllowedOrigins(deps.Config.App.AllowedOrigins),
-		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
-		AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
-		AllowCredentials: true,
-		MaxAge:           3600,
-	}))
+	app.Use(cors.New(getCORSConfig(deps.Config)))
 
 	// Setup Routes
 	SetupRoutes(app, deps)
@@ -280,6 +274,34 @@ func main() {
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+func getCORSConfig(cfg *config.Config) cors.Config {
+	origins := getAllowedOrigins(cfg.App.AllowedOrigins)
+	
+	// Development: specific localhost origins with credentials
+	if cfg.App.IsDevelopment() {
+		if len(cfg.App.AllowedOrigins) == 0 || cfg.App.AllowedOrigins[0] == "*" {
+			origins = "http://localhost:3000,http://localhost:4321,http://localhost:5173"
+		}
+		return cors.Config{
+			AllowOrigins:     origins,
+			AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
+			AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
+			AllowCredentials: true,
+			MaxAge:           3600,
+		}
+	}
+	
+	// Production: use env origins (must be specific)
+	return cors.Config{
+		AllowOrigins:     origins,
+		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
+		AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
+		AllowCredentials: true,
+		MaxAge:           3600,
+	}
+}
+
 
 func parseLogLevel(level string) zerolog.Level {
 	switch level {

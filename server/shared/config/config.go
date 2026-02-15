@@ -247,8 +247,8 @@ func Load() (*Config, error) {
 			Env:              getEnv("APP_ENV", "development"),
 			Port:             getEnv("APP_PORT", "8080"),
 			RequestBodyLimit: getEnvAsInt("REQUEST_BODY_LIMIT", 10*1024*1024), // 10MB default
-			ReadTimeout:      getEnvAsDuration("READ_TIMEOUT", 10*time.Second),
-			WriteTimeout:     getEnvAsDuration("WRITE_TIMEOUT", 10*time.Second),
+			ReadTimeout:      getEnvAsDuration("READ_TIMEOUT", 30*time.Second),
+			WriteTimeout:     getEnvAsDuration("WRITE_TIMEOUT", 30*time.Second),
 			IdleTimeout:      getEnvAsDuration("IDLE_TIMEOUT", 120*time.Second),
 			TrustedProxies:   getEnvAsSlice("TRUSTED_PROXIES", []string{"127.0.0.1"}),
 			AllowedOrigins:   getEnvAsSlice("ALLOWED_ORIGINS", []string{"*"}),
