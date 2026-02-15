@@ -22,6 +22,7 @@ import (
 type AuthService struct {
 	userRepo         *repository.UserRepository
 	organizationRepo *repository.OrganizationRepository
+	planRepo         *repository.SubscriptionPlanRepository 
 	tokenRepo        *repository.TokenRepository
 	sessionMgr       *utils.Manager
 	emailService     *utils.EmailService
@@ -33,6 +34,7 @@ type AuthService struct {
 func NewAuthService(
 	userRepo *repository.UserRepository,
 	organizationRepo *repository.OrganizationRepository,
+	planRepo *repository.SubscriptionPlanRepository,
 	tokenRepo *repository.TokenRepository,
 	sessionMgr *utils.Manager,
 	emailService *utils.EmailService,
@@ -43,6 +45,7 @@ func NewAuthService(
 	return &AuthService{
 		userRepo:         userRepo,
 		organizationRepo: organizationRepo,
+		planRepo:         planRepo,
 		tokenRepo:        tokenRepo,
 		sessionMgr:       sessionMgr,
 		emailService:     emailService,
@@ -70,6 +73,44 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		return nil, errors.BadRequest(err.Error())
 	}
 
+	// Parse and validate plan selection
+	planTier := models.PlanDeveloper // Default to free plan
+	billingPeriod := models.BillingMonthly
+
+	if req.PlanTier != nil {
+		switch *req.PlanTier {
+		case "developer":
+			planTier = models.PlanDeveloper
+		case "starter":
+			planTier = models.PlanStarter
+		case "growth":
+			planTier = models.PlanGrowth
+		case "scale":
+			planTier = models.PlanScale
+		default:
+			return nil, errors.BadRequest("Invalid plan tier. Must be: developer, starter, growth, or scale")
+		}
+	}
+
+	// Billing period validation (only for paid plans)
+	if planTier != models.PlanDeveloper && req.BillingPeriod != nil {
+		switch *req.BillingPeriod {
+		case "monthly":
+			billingPeriod = models.BillingMonthly
+		case "annual":
+			billingPeriod = models.BillingAnnual
+		default:
+			return nil, errors.BadRequest("Invalid billing period. Must be: monthly or annual")
+		}
+	}
+
+	// Fetch plan from database
+	plan, err := s.planRepo.GetByTierAndBilling(ctx, planTier, billingPeriod)
+	if err != nil {
+		s.log.Error("Failed to fetch subscription plan", err, "tier", planTier, "billing", billingPeriod)
+		return nil, errors.BadRequest("Selected plan is not available")
+	}
+
 	// Check if email already exists
 	exists, err := s.userRepo.ExistsByEmail(ctx, sharedUtils.NormalizeEmail(req.Email))
 	if err != nil {
@@ -92,7 +133,7 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		UpdatedAt:     time.Now(),
 	}
 
-	// Hash password
+	// Hash password (SetPassword internally validates and hashes)
 	if err := user.SetPassword(req.Password); err != nil {
 		s.log.Error("Failed to hash password", err)
 		return nil, errors.Internal(err)
@@ -104,7 +145,7 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		return nil, errors.Internal(err)
 	}
 
-	// Create default organization for user
+	// Create organization with selected plan limits
 	orgSlug := sharedUtils.GenerateSlug(fmt.Sprintf("%s-workspace", user.FullName))
 	
 	// Ensure slug is unique
@@ -118,27 +159,46 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		Name:               fmt.Sprintf("%s's Workspace", user.FullName),
 		Slug:               orgSlug,
 		OwnerID:            user.ID,
-		PlanTier:           models.PlanDeveloper,
-		BillingPeriod:      models.BillingMonthly,
+		PlanTier:           plan.Tier,
+		BillingPeriod:      plan.BillingPeriod,
 		SubscriptionStatus: models.SubscriptionActive,
-		MonthlyEventsLimit: 5000,
+		
+		// Plan limits from database (subscription_plans table)
+		MonthlyEventsLimit: plan.MonthlyEventsLimit,
 		MonthlyEventsUsed:  0,
-		RetentionDays:      1,
-		TeamSeatsLimit:     1,
-		RateLimitPerSecond: 5,
-		ProjectsLimit:      1,
-		Metadata:           models.OrganizationMetadata{},
-		CreatedAt:          time.Now(),
-		UpdatedAt:          time.Now(),
+		RetentionDays:      plan.RetentionDays,
+		TeamSeatsLimit:     plan.TeamSeatsLimit,
+		RateLimitPerSecond: plan.RateLimitPerSecond,
+		ProjectsLimit:      plan.ProjectsLimit,
+		
+		// Initialize metadata
+		Metadata:  models.OrganizationMetadata{},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	// For paid plans, set billing period dates
+	if !plan.IsFreePlan() {
+		now := time.Now()
+		periodEnd := now.AddDate(0, 1, 0) // +1 month
+		if plan.IsAnnualPlan() {
+			periodEnd = now.AddDate(1, 0, 0) // +1 year
+		}
+		organization.CurrentPeriodStart = &now
+		organization.CurrentPeriodEnd = &periodEnd
+		
+		// Note: LemonSqueezy customer_id and subscription_id will be set later via webhook
+		// when actual payment is completed
 	}
 
 	if err := s.organizationRepo.Create(ctx, organization); err != nil {
 		s.log.Error("Failed to create organization", err, "user_id", user.ID)
-		// Don't fail registration if org creation fails
+		// Don't fail registration if org creation fails - user can create org later
+		organization = nil
 	}
 
 	// Create organization membership (owner)
-	if organization.ID != uuid.Nil {
+	if organization != nil && organization.ID != uuid.Nil {
 		member := &models.OrganizationMember{
 			ID:             uuid.New(),
 			OrganizationID: organization.ID,
@@ -156,11 +216,24 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 	// Send verification email asynchronously
 	s.sendVerificationEmailAsync(user)
 
-	s.log.Info("User registered successfully", "user_id", user.ID, "email", user.Email)
+	s.log.Info("User registered successfully", 
+		"user_id", user.ID, 
+		"email", user.Email,
+		"plan", plan.Tier,
+		"billing", plan.BillingPeriod,
+		"plan_name", plan.Name,
+	)
+
+	// Prepare response
+	var orgResponse *dto.OrganizationResponse
+	if organization != nil {
+		orgResponse = dto.ToOrganizationResponse(organization, string(models.RoleOwner))
+	}
 
 	return &dto.RegisterResponse{
-		Message: "Registration successful! Please check your email to verify your account.",
-		User:    dto.ToUserResponse(user),
+		Message:      "Registration successful! Please check your email to verify your account.",
+		User:         dto.ToUserResponse(user),
+		Organization: orgResponse,
 	}, nil
 }
 

@@ -16,11 +16,14 @@ type RegisterRequest struct {
 	FullName string `json:"full_name" validate:"required,min=2,max=255"`
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required,min=8,max=72"`
+	PlanTier      *string `json:"plan_tier,omitempty"`
+	BillingPeriod *string `json:"billing_period,omitempty"`
 }
 
 type RegisterResponse struct {
 	Message string        `json:"message"`
 	User    *UserResponse `json:"user"`
+	Organization *OrganizationResponse `json:"organization"`
 }
 
 // ============================================================================
