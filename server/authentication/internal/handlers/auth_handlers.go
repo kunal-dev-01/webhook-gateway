@@ -48,58 +48,65 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 // LOGIN
 // ============================================================================
 
+// auth.handler.go - FIXED VERSION
+
 func (h *AuthHandler) Login(c *fiber.Ctx) error {
-	var req dto.LoginRequest
-	if err := c.BodyParser(&req); err != nil {
-		return errors.BadRequest("Invalid request body")
-	}
+    var req dto.LoginRequest
+    if err := c.BodyParser(&req); err != nil {
+        return errors.BadRequest("Invalid request body")
+    }
 
-	resp, err := h.authService.Login(c.Context(), &req)
-	if err != nil {
-		return err
-	}
+    resp, err := h.authService.Login(c.Context(), &req)
+    if err != nil {
+        return err
+    }
 
-	if resp.TwoFactorRequired {
-		return c.JSON(fiber.Map{
-			"success": true,
-			"data":    resp,
-		})
-	}
+    // If 2FA required, return temp_token
+    if resp.TwoFactorRequired {
+        return c.JSON(fiber.Map{
+            "success": true,
+            "data": fiber.Map{
+                "two_factor_required": true,
+                "temp_token":         resp.TempToken,
+            },
+        })
+    }
 
-	setRefreshTokenCookie(c, resp.RefreshToken)
-
-	return c.JSON(fiber.Map{
-		"success": true,
-		"data":    fiber.Map{
-			"two_factor_required": resp.TwoFactorRequired,
-			"access_token"        : resp.AccessToken,
-			"expires_in"          : resp.ExpiresIn,
-			"User":            resp.User,
-		},
-	})
+    // Normal login - set cookie and return tokens
+    setRefreshTokenCookie(c, resp.RefreshToken)
+    
+    return c.JSON(fiber.Map{
+        "success": true,
+        "data": fiber.Map{
+            "two_factor_required": false,
+            "access_token":        resp.AccessToken,
+            "expires_in":          resp.ExpiresIn,
+            "user":                resp.User, // ✅ lowercase 'user'
+        },
+    })
 }
 
 func (h *AuthHandler) Verify2FA(c *fiber.Ctx) error {
-	var req dto.TwoFactorVerifyRequest
-	if err := c.BodyParser(&req); err != nil {
-		return errors.BadRequest("Invalid request body")
-	}
+    var req dto.TwoFactorVerifyRequest
+    if err := c.BodyParser(&req); err != nil {
+        return errors.BadRequest("Invalid request body")
+    }
 
-	resp, err := h.authService.Verify2FA(c.Context(), &req)
-	if err != nil {
-		return err
-	}
+    resp, err := h.authService.Verify2FA(c.Context(), &req)
+    if err != nil {
+        return err
+    }
 
-	setRefreshTokenCookie(c, resp.RefreshToken)
-
-	return c.JSON(fiber.Map{
-		"success": true,
-		"data":    fiber.Map{
-			"access_token"        : resp.AccessToken,
-			"expires_in"          : resp.ExpiresIn,
-			"User":            resp.User,
-		},
-	})
+    setRefreshTokenCookie(c, resp.RefreshToken)
+    
+    return c.JSON(fiber.Map{
+        "success": true,
+        "data": fiber.Map{
+            "access_token": resp.AccessToken,
+            "expires_in":   resp.ExpiresIn,
+            "user":         resp.User, // ✅ lowercase 'user'
+        },
+    })
 }
 
 func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
