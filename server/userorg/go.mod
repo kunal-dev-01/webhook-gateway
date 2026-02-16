@@ -1,0 +1,3 @@
+module userorg
+
+go 1.25.5

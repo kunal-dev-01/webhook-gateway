@@ -2,7 +2,7 @@ go 1.25.5
 
 use (
   ./authentication
-  ./employee
-  ./credit
+  ./billing
+  ./userorg
   ./shared
 )

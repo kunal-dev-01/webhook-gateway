@@ -25,12 +25,67 @@ func NewOrganizationRepository(database *db.DB) *OrganizationRepository {
 	return &OrganizationRepository{db: database}
 }
 
+// ───────────────── Helpers (Optimization & Safety) ─────────────────
+
+// withWriteContext creates a detached context for safe Write operations.
+func (r *OrganizationRepository) withWriteContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 5*time.Second)
+}
+
+// performUpdate executes an update query safely using a background context.
+func (r *OrganizationRepository) performUpdate(query, opName string, resourceID uuid.UUID, args ...any) error {
+	ctx, cancel := r.withWriteContext()
+	defer cancel()
+
+	result, err := r.db.Exec(ctx, query, args...)
+	if err != nil {
+		logger.Error("Failed to "+opName, err, "id", resourceID)
+		return errors.Wrap(err, 500, "Failed to "+opName)
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return errors.NotFound("Resource not found or operation not applicable")
+	}
+
+	logger.Debug("Success: "+opName, "id", resourceID)
+	return nil
+}
+
+// scanOrg handles scanning organization rows to avoid duplication
+func (r *OrganizationRepository) scanOrg(scanner interface{ Scan(...any) error }) (*models.Organization, error) {
+	org := &models.Organization{}
+	err := scanner.Scan(
+		&org.ID, &org.Name, &org.Slug, &org.OwnerID,
+		&org.PlanTier, &org.BillingPeriod, &org.SubscriptionStatus,
+		&org.LemonSqueezyCustomerID, &org.LemonSqueezySubscriptionID,
+		&org.CurrentPeriodStart, &org.CurrentPeriodEnd,
+		&org.MonthlyEventsLimit, &org.MonthlyEventsUsed, &org.RetentionDays,
+		&org.TeamSeatsLimit, &org.RateLimitPerSecond, &org.ProjectsLimit,
+		&org.Metadata, &org.DeletedAt, &org.CreatedAt, &org.UpdatedAt,
+	)
+	return org, err
+}
+
+// scanMember handles scanning member rows
+func (r *OrganizationRepository) scanMember(scanner interface{ Scan(...any) error }) (*models.OrganizationMember, error) {
+	member := &models.OrganizationMember{}
+	err := scanner.Scan(
+		&member.ID, &member.OrganizationID, &member.UserID, &member.Role,
+		&member.InvitedBy, &member.InvitationAcceptedAt,
+		&member.DeletedAt, &member.CreatedAt, &member.UpdatedAt,
+	)
+	return member, err
+}
+
 // ============================================================================
-// CREATE
+// CREATE (Safe Write)
 // ============================================================================
 
-// Create creates a new organization with default settings
 func (r *OrganizationRepository) Create(ctx context.Context, org *models.Organization) error {
+	writeCtx, cancel := r.withWriteContext()
+	defer cancel()
+
 	query := `
 		INSERT INTO organizations (
 			id, name, slug, owner_id,
@@ -40,11 +95,9 @@ func (r *OrganizationRepository) Create(ctx context.Context, org *models.Organiz
 			monthly_events_limit, monthly_events_used, retention_days,
 			team_seats_limit, rate_limit_per_second, projects_limit,
 			metadata, created_at, updated_at
-		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
-		)`
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`
 
-	_, err := r.db.Exec(ctx, query,
+	_, err := r.db.Exec(writeCtx, query,
 		org.ID, org.Name, org.Slug, org.OwnerID,
 		org.PlanTier, org.BillingPeriod, org.SubscriptionStatus,
 		org.LemonSqueezyCustomerID, org.LemonSqueezySubscriptionID,
@@ -59,22 +112,22 @@ func (r *OrganizationRepository) Create(ctx context.Context, org *models.Organiz
 		return errors.Wrap(err, 500, "Failed to create organization")
 	}
 
-	logger.Debug("Organization created successfully", "org_id", org.ID, "name", org.Name)
+	logger.Debug("Organization created successfully", "org_id", org.ID)
 	return nil
 }
 
-// CreateMembership creates organization membership (adds user to org)
 func (r *OrganizationRepository) CreateMembership(ctx context.Context, member *models.OrganizationMember) error {
+	writeCtx, cancel := r.withWriteContext()
+	defer cancel()
+
 	query := `
 		INSERT INTO organization_members (
 			id, organization_id, user_id, role,
 			invited_by, invitation_accepted_at,
 			created_at, updated_at
-		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8
-		)`
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
 
-	_, err := r.db.Exec(ctx, query,
+	_, err := r.db.Exec(writeCtx, query,
 		member.ID, member.OrganizationID, member.UserID, member.Role,
 		member.InvitedBy, member.InvitationAcceptedAt,
 		member.CreatedAt, member.UpdatedAt,
@@ -84,40 +137,24 @@ func (r *OrganizationRepository) CreateMembership(ctx context.Context, member *m
 		logger.Error("Failed to create membership", err, "org_id", member.OrganizationID, "user_id", member.UserID)
 		return errors.Wrap(err, 500, "Failed to create organization membership")
 	}
-
-	logger.Debug("Membership created successfully", "org_id", member.OrganizationID, "user_id", member.UserID, "role", member.Role)
 	return nil
 }
 
 // ============================================================================
-// READ
+// READ (Fast Read - Request Context)
 // ============================================================================
 
-// GetByID retrieves an organization by ID
 func (r *OrganizationRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Organization, error) {
-	org := &models.Organization{}
+	// Explicit column selection is better for maintainability vs SELECT *
 	query := `
 		SELECT 
-			id, name, slug, owner_id,
-			plan_tier, billing_period, subscription_status,
-			lemon_squeezy_customer_id, lemon_squeezy_subscription_id,
-			current_period_start, current_period_end,
-			monthly_events_limit, monthly_events_used, retention_days,
-			team_seats_limit, rate_limit_per_second, projects_limit,
+			id, name, slug, owner_id, plan_tier, billing_period, subscription_status,
+			lemon_squeezy_customer_id, lemon_squeezy_subscription_id, current_period_start, current_period_end,
+			monthly_events_limit, monthly_events_used, retention_days, team_seats_limit, rate_limit_per_second, projects_limit,
 			metadata, deleted_at, created_at, updated_at
-		FROM organizations 
-		WHERE id = $1 AND deleted_at IS NULL`
+		FROM organizations WHERE id = $1 AND deleted_at IS NULL`
 
-	err := r.db.QueryRow(ctx, query, id).Scan(
-		&org.ID, &org.Name, &org.Slug, &org.OwnerID,
-		&org.PlanTier, &org.BillingPeriod, &org.SubscriptionStatus,
-		&org.LemonSqueezyCustomerID, &org.LemonSqueezySubscriptionID,
-		&org.CurrentPeriodStart, &org.CurrentPeriodEnd,
-		&org.MonthlyEventsLimit, &org.MonthlyEventsUsed, &org.RetentionDays,
-		&org.TeamSeatsLimit, &org.RateLimitPerSecond, &org.ProjectsLimit,
-		&org.Metadata, &org.DeletedAt, &org.CreatedAt, &org.UpdatedAt,
-	)
-
+	org, err := r.scanOrg(r.db.QueryRow(ctx, query, id))
 	if err == sql.ErrNoRows {
 		return nil, errors.NotFound("Organization not found")
 	}
@@ -125,35 +162,19 @@ func (r *OrganizationRepository) GetByID(ctx context.Context, id uuid.UUID) (*mo
 		logger.Error("Failed to get organization by ID", err, "org_id", id)
 		return nil, errors.Internal(err)
 	}
-
 	return org, nil
 }
 
-// GetBySlug retrieves an organization by slug
 func (r *OrganizationRepository) GetBySlug(ctx context.Context, slug string) (*models.Organization, error) {
-	org := &models.Organization{}
 	query := `
 		SELECT 
-			id, name, slug, owner_id,
-			plan_tier, billing_period, subscription_status,
-			lemon_squeezy_customer_id, lemon_squeezy_subscription_id,
-			current_period_start, current_period_end,
-			monthly_events_limit, monthly_events_used, retention_days,
-			team_seats_limit, rate_limit_per_second, projects_limit,
+			id, name, slug, owner_id, plan_tier, billing_period, subscription_status,
+			lemon_squeezy_customer_id, lemon_squeezy_subscription_id, current_period_start, current_period_end,
+			monthly_events_limit, monthly_events_used, retention_days, team_seats_limit, rate_limit_per_second, projects_limit,
 			metadata, deleted_at, created_at, updated_at
-		FROM organizations 
-		WHERE slug = $1 AND deleted_at IS NULL`
+		FROM organizations WHERE slug = $1 AND deleted_at IS NULL`
 
-	err := r.db.QueryRow(ctx, query, slug).Scan(
-		&org.ID, &org.Name, &org.Slug, &org.OwnerID,
-		&org.PlanTier, &org.BillingPeriod, &org.SubscriptionStatus,
-		&org.LemonSqueezyCustomerID, &org.LemonSqueezySubscriptionID,
-		&org.CurrentPeriodStart, &org.CurrentPeriodEnd,
-		&org.MonthlyEventsLimit, &org.MonthlyEventsUsed, &org.RetentionDays,
-		&org.TeamSeatsLimit, &org.RateLimitPerSecond, &org.ProjectsLimit,
-		&org.Metadata, &org.DeletedAt, &org.CreatedAt, &org.UpdatedAt,
-	)
-
+	org, err := r.scanOrg(r.db.QueryRow(ctx, query, slug))
 	if err == sql.ErrNoRows {
 		return nil, errors.NotFound("Organization not found")
 	}
@@ -161,20 +182,15 @@ func (r *OrganizationRepository) GetBySlug(ctx context.Context, slug string) (*m
 		logger.Error("Failed to get organization by slug", err, "slug", slug)
 		return nil, errors.Internal(err)
 	}
-
 	return org, nil
 }
 
-// ListByUser retrieves all organizations where user is a member
 func (r *OrganizationRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]*models.Organization, error) {
 	query := `
 		SELECT 
-			o.id, o.name, o.slug, o.owner_id,
-			o.plan_tier, o.billing_period, o.subscription_status,
-			o.lemon_squeezy_customer_id, o.lemon_squeezy_subscription_id,
-			o.current_period_start, o.current_period_end,
-			o.monthly_events_limit, o.monthly_events_used, o.retention_days,
-			o.team_seats_limit, o.rate_limit_per_second, o.projects_limit,
+			o.id, o.name, o.slug, o.owner_id, o.plan_tier, o.billing_period, o.subscription_status,
+			o.lemon_squeezy_customer_id, o.lemon_squeezy_subscription_id, o.current_period_start, o.current_period_end,
+			o.monthly_events_limit, o.monthly_events_used, o.retention_days, o.team_seats_limit, o.rate_limit_per_second, o.projects_limit,
 			o.metadata, o.deleted_at, o.created_at, o.updated_at
 		FROM organizations o
 		INNER JOIN organization_members om ON o.id = om.organization_id
@@ -190,99 +206,61 @@ func (r *OrganizationRepository) ListByUser(ctx context.Context, userID uuid.UUI
 
 	var orgs []*models.Organization
 	for rows.Next() {
-		org := &models.Organization{}
-		if err := rows.Scan(
-			&org.ID, &org.Name, &org.Slug, &org.OwnerID,
-			&org.PlanTier, &org.BillingPeriod, &org.SubscriptionStatus,
-			&org.LemonSqueezyCustomerID, &org.LemonSqueezySubscriptionID,
-			&org.CurrentPeriodStart, &org.CurrentPeriodEnd,
-			&org.MonthlyEventsLimit, &org.MonthlyEventsUsed, &org.RetentionDays,
-			&org.TeamSeatsLimit, &org.RateLimitPerSecond, &org.ProjectsLimit,
-			&org.Metadata, &org.DeletedAt, &org.CreatedAt, &org.UpdatedAt,
-		); err != nil {
+		org, err := r.scanOrg(rows)
+		if err != nil {
 			logger.Error("Failed to scan organization", err)
 			return nil, errors.Internal(err)
 		}
 		orgs = append(orgs, org)
 	}
-
-	if err = rows.Err(); err != nil {
-		logger.Error("Error iterating organizations", err)
-		return nil, errors.Internal(err)
-	}
-
-	return orgs, nil
+	return orgs, rows.Err()
 }
 
-// ExistsBySlug checks if organization exists with given slug
 func (r *OrganizationRepository) ExistsBySlug(ctx context.Context, slug string) (bool, error) {
 	var exists bool
 	query := `SELECT EXISTS(SELECT 1 FROM organizations WHERE slug = $1 AND deleted_at IS NULL)`
-	
 	if err := r.db.QueryRow(ctx, query, slug).Scan(&exists); err != nil {
 		logger.Error("Failed to check slug existence", err, "slug", slug)
 		return false, errors.Internal(err)
 	}
-	
 	return exists, nil
 }
 
 // ============================================================================
-// MEMBERSHIP QUERIES
+// MEMBERSHIP READS
 // ============================================================================
 
-// GetMembership retrieves user's membership in organization
 func (r *OrganizationRepository) GetMembership(ctx context.Context, orgID, userID uuid.UUID) (*models.OrganizationMember, error) {
-	member := &models.OrganizationMember{}
 	query := `
-		SELECT 
-			id, organization_id, user_id, role,
-			invited_by, invitation_accepted_at,
-			deleted_at, created_at, updated_at
+		SELECT id, organization_id, user_id, role, invited_by, invitation_accepted_at, deleted_at, created_at, updated_at
 		FROM organization_members
 		WHERE organization_id = $1 AND user_id = $2 AND deleted_at IS NULL`
 
-	err := r.db.QueryRow(ctx, query, orgID, userID).Scan(
-		&member.ID, &member.OrganizationID, &member.UserID, &member.Role,
-		&member.InvitedBy, &member.InvitationAcceptedAt,
-		&member.DeletedAt, &member.CreatedAt, &member.UpdatedAt,
-	)
-
+	member, err := r.scanMember(r.db.QueryRow(ctx, query, orgID, userID))
 	if err == sql.ErrNoRows {
 		return nil, errors.NotFound("Membership not found")
 	}
 	if err != nil {
-		logger.Error("Failed to get membership", err, "org_id", orgID, "user_id", userID)
+		logger.Error("Failed to get membership", err, "org_id", orgID)
 		return nil, errors.Internal(err)
 	}
-
 	return member, nil
 }
 
-// ListMembers retrieves all members of an organization
 func (r *OrganizationRepository) ListMembers(ctx context.Context, orgID uuid.UUID, limit, offset int) ([]*models.OrganizationMember, int, error) {
-	// Get total count
-	countQuery := `
-		SELECT COUNT(*) 
-		FROM organization_members 
-		WHERE organization_id = $1 AND deleted_at IS NULL`
-	
+	// 1. Get total count
 	var total int
-	if err := r.db.QueryRow(ctx, countQuery, orgID).Scan(&total); err != nil {
+	if err := r.db.QueryRow(ctx, "SELECT COUNT(*) FROM organization_members WHERE organization_id = $1 AND deleted_at IS NULL", orgID).Scan(&total); err != nil {
 		logger.Error("Failed to count members", err, "org_id", orgID)
 		return nil, 0, errors.Internal(err)
 	}
 
-	// Get members
+	// 2. Get members
 	query := `
-		SELECT 
-			id, organization_id, user_id, role,
-			invited_by, invitation_accepted_at,
-			deleted_at, created_at, updated_at
+		SELECT id, organization_id, user_id, role, invited_by, invitation_accepted_at, deleted_at, created_at, updated_at
 		FROM organization_members
 		WHERE organization_id = $1 AND deleted_at IS NULL
-		ORDER BY created_at DESC
-		LIMIT $2 OFFSET $3`
+		ORDER BY created_at DESC LIMIT $2 OFFSET $3`
 
 	rows, err := r.db.Query(ctx, query, orgID, limit, offset)
 	if err != nil {
@@ -293,172 +271,91 @@ func (r *OrganizationRepository) ListMembers(ctx context.Context, orgID uuid.UUI
 
 	var members []*models.OrganizationMember
 	for rows.Next() {
-		member := &models.OrganizationMember{}
-		if err := rows.Scan(
-			&member.ID, &member.OrganizationID, &member.UserID, &member.Role,
-			&member.InvitedBy, &member.InvitationAcceptedAt,
-			&member.DeletedAt, &member.CreatedAt, &member.UpdatedAt,
-		); err != nil {
+		member, err := r.scanMember(rows)
+		if err != nil {
 			logger.Error("Failed to scan member", err)
 			return nil, 0, errors.Internal(err)
 		}
 		members = append(members, member)
 	}
-
-	if err = rows.Err(); err != nil {
-		logger.Error("Error iterating members", err)
-		return nil, 0, errors.Internal(err)
-	}
-
-	return members, total, nil
+	return members, total, rows.Err()
 }
 
-// GetMemberCount returns active member count for an organization
 func (r *OrganizationRepository) GetMemberCount(ctx context.Context, orgID uuid.UUID) (int, error) {
 	var count int
-	query := `
-		SELECT COUNT(*) 
-		FROM organization_members 
-		WHERE organization_id = $1 AND deleted_at IS NULL`
-	
-	if err := r.db.QueryRow(ctx, query, orgID).Scan(&count); err != nil {
+	if err := r.db.QueryRow(ctx, "SELECT COUNT(*) FROM organization_members WHERE organization_id = $1 AND deleted_at IS NULL", orgID).Scan(&count); err != nil {
 		logger.Error("Failed to get member count", err, "org_id", orgID)
 		return 0, errors.Internal(err)
 	}
-	
 	return count, nil
 }
 
 // ============================================================================
-// UPDATE
+// UPDATE (Safe Writes using performUpdate)
 // ============================================================================
 
-// Update updates organization details
 func (r *OrganizationRepository) Update(ctx context.Context, org *models.Organization) error {
 	org.UpdatedAt = time.Now()
-	
-	query := `
-		UPDATE organizations SET
-			name = $2,
-			slug = $3,
-			metadata = $4,
-			updated_at = $5
-		WHERE id = $1 AND deleted_at IS NULL`
-
-	result, err := r.db.Exec(ctx, query,
-		org.ID, org.Name, org.Slug, org.Metadata, org.UpdatedAt,
-	)
-
-	if err != nil {
-		logger.Error("Failed to update organization", err, "org_id", org.ID)
-		return errors.Wrap(err, 500, "Failed to update organization")
-	}
-
-	rows, _ := result.RowsAffected()
-	if rows == 0 {
-		return errors.NotFound("Organization not found")
-	}
-
-	logger.Debug("Organization updated successfully", "org_id", org.ID)
-	return nil
+	query := `UPDATE organizations SET name = $2, slug = $3, metadata = $4, updated_at = $5 WHERE id = $1 AND deleted_at IS NULL`
+	return r.performUpdate(query, "update organization", org.ID, org.Name, org.Slug, org.Metadata, org.UpdatedAt)
 }
 
-// UpdateSubscription updates subscription details
 func (r *OrganizationRepository) UpdateSubscription(ctx context.Context, org *models.Organization) error {
 	org.UpdatedAt = time.Now()
-	
 	query := `
 		UPDATE organizations SET
-			plan_tier = $2,
-			billing_period = $3,
-			subscription_status = $4,
-			lemon_squeezy_customer_id = $5,
-			lemon_squeezy_subscription_id = $6,
-			current_period_start = $7,
-			current_period_end = $8,
-			monthly_events_limit = $9,
-			retention_days = $10,
-			team_seats_limit = $11,
-			rate_limit_per_second = $12,
-			projects_limit = $13,
+			plan_tier = $2, billing_period = $3, subscription_status = $4,
+			lemon_squeezy_customer_id = $5, lemon_squeezy_subscription_id = $6,
+			current_period_start = $7, current_period_end = $8,
+			monthly_events_limit = $9, retention_days = $10,
+			team_seats_limit = $11, rate_limit_per_second = $12, projects_limit = $13,
 			updated_at = $14
 		WHERE id = $1 AND deleted_at IS NULL`
 
-	result, err := r.db.Exec(ctx, query,
-		org.ID, org.PlanTier, org.BillingPeriod, org.SubscriptionStatus,
+	return r.performUpdate(query, "update subscription", org.ID,
+		org.PlanTier, org.BillingPeriod, org.SubscriptionStatus,
 		org.LemonSqueezyCustomerID, org.LemonSqueezySubscriptionID,
 		org.CurrentPeriodStart, org.CurrentPeriodEnd,
-		org.MonthlyEventsLimit, org.RetentionDays, org.TeamSeatsLimit,
-		org.RateLimitPerSecond, org.ProjectsLimit, org.UpdatedAt,
+		org.MonthlyEventsLimit, org.RetentionDays,
+		org.TeamSeatsLimit, org.RateLimitPerSecond, org.ProjectsLimit, org.UpdatedAt,
 	)
-
-	if err != nil {
-		logger.Error("Failed to update subscription", err, "org_id", org.ID)
-		return errors.Wrap(err, 500, "Failed to update subscription")
-	}
-
-	rows, _ := result.RowsAffected()
-	if rows == 0 {
-		return errors.NotFound("Organization not found")
-	}
-
-	logger.Debug("Subscription updated successfully", "org_id", org.ID, "plan", org.PlanTier)
-	return nil
 }
 
-// IncrementEventsUsed increments monthly events counter
 func (r *OrganizationRepository) IncrementEventsUsed(ctx context.Context, orgID uuid.UUID, count int64) error {
-	query := `
-		UPDATE organizations 
-		SET 
-			monthly_events_used = monthly_events_used + $2,
-			updated_at = $3
-		WHERE id = $1 AND deleted_at IS NULL`
+	// Direct Exec used because RowsAffected check is not critical here (if org is deleted, it just won't update)
+	writeCtx, cancel := r.withWriteContext()
+	defer cancel()
 
-	now := time.Now()
-	_, err := r.db.Exec(ctx, query, orgID, count, now)
-	
+	query := `UPDATE organizations SET monthly_events_used = monthly_events_used + $2, updated_at = $3 WHERE id = $1 AND deleted_at IS NULL`
+	_, err := r.db.Exec(writeCtx, query, orgID, count, time.Now())
 	if err != nil {
-		logger.Error("Failed to increment events used", err, "org_id", orgID, "count", count)
+		logger.Error("Failed to increment events", err, "org_id", orgID)
 		return errors.Internal(err)
 	}
-
 	return nil
 }
 
-// ResetMonthlyUsage resets monthly events counter (called by cron)
 func (r *OrganizationRepository) ResetMonthlyUsage(ctx context.Context, orgID uuid.UUID) error {
-	query := `
-		UPDATE organizations 
-		SET 
-			monthly_events_used = 0,
-			updated_at = $2
-		WHERE id = $1 AND deleted_at IS NULL`
+	writeCtx, cancel := r.withWriteContext()
+	defer cancel()
 
-	now := time.Now()
-	_, err := r.db.Exec(ctx, query, orgID, now)
-	
+	query := `UPDATE organizations SET monthly_events_used = 0, updated_at = $2 WHERE id = $1 AND deleted_at IS NULL`
+	_, err := r.db.Exec(writeCtx, query, orgID, time.Now())
 	if err != nil {
 		logger.Error("Failed to reset monthly usage", err, "org_id", orgID)
 		return errors.Internal(err)
 	}
-
-	logger.Debug("Monthly usage reset", "org_id", orgID)
 	return nil
 }
 
-// UpdateMemberRole updates member's role in organization
 func (r *OrganizationRepository) UpdateMemberRole(ctx context.Context, orgID, userID uuid.UUID, role models.OrganizationMemberRole) error {
-	now := time.Now()
-	query := `
-		UPDATE organization_members 
-		SET role = $3, updated_at = $4
-		WHERE organization_id = $1 AND user_id = $2 AND deleted_at IS NULL`
+	writeCtx, cancel := r.withWriteContext()
+	defer cancel()
 
-	result, err := r.db.Exec(ctx, query, orgID, userID, role, now)
-	
+	query := `UPDATE organization_members SET role = $3, updated_at = $4 WHERE organization_id = $1 AND user_id = $2 AND deleted_at IS NULL`
+	result, err := r.db.Exec(writeCtx, query, orgID, userID, role, time.Now())
 	if err != nil {
-		logger.Error("Failed to update member role", err, "org_id", orgID, "user_id", userID)
+		logger.Error("Failed to update member role", err, "org_id", orgID)
 		return errors.Internal(err)
 	}
 
@@ -466,15 +363,20 @@ func (r *OrganizationRepository) UpdateMemberRole(ctx context.Context, orgID, us
 	if rows == 0 {
 		return errors.NotFound("Member not found")
 	}
-
-	logger.Debug("Member role updated", "org_id", orgID, "user_id", userID, "new_role", role)
 	return nil
 }
 
-// TransferOwnership transfers organization ownership to another member
+// ============================================================================
+// TRANSACTION (Safe Write)
+// ============================================================================
+
 func (r *OrganizationRepository) TransferOwnership(ctx context.Context, orgID, newOwnerID, oldOwnerID uuid.UUID) error {
-	// Start transaction
-	tx, err := r.db.BeginTx(ctx, nil)
+	// Safe Write Context for the entire transaction
+	writeCtx, cancel := r.withWriteContext()
+	defer cancel()
+
+	// Begin Tx
+	tx, err := r.db.BeginTx(writeCtx, nil)
 	if err != nil {
 		logger.Error("Failed to begin transaction", err)
 		return errors.Internal(err)
@@ -483,100 +385,59 @@ func (r *OrganizationRepository) TransferOwnership(ctx context.Context, orgID, n
 
 	now := time.Now()
 
-	// Update organization owner
-	query1 := `UPDATE organizations SET owner_id = $2, updated_at = $3 WHERE id = $1`
-	if _, err := tx.Exec(query1, orgID, newOwnerID, now); err != nil {
-		logger.Error("Failed to update organization owner", err)
+	// 1. Update Organization Owner
+	if _, err := tx.ExecContext(writeCtx, "UPDATE organizations SET owner_id = $1, updated_at = $2 WHERE id = $3", newOwnerID, now, orgID); err != nil {
+		logger.Error("Failed to update org owner", err)
 		return errors.Internal(err)
 	}
 
-	// Update new owner's role to owner
-	query2 := `
-		UPDATE organization_members 
-		SET role = $3, updated_at = $4 
-		WHERE organization_id = $1 AND user_id = $2 AND deleted_at IS NULL`
-	if _, err := tx.Exec(query2, orgID, newOwnerID, models.RoleOwner, now); err != nil {
-		logger.Error("Failed to update new owner role", err)
+	// 2. Promote New Owner (Member -> Owner)
+	if _, err := tx.ExecContext(writeCtx, "UPDATE organization_members SET role = $1, updated_at = $2 WHERE organization_id = $3 AND user_id = $4", models.RoleOwner, now, orgID, newOwnerID); err != nil {
+		logger.Error("Failed to promote new owner", err)
 		return errors.Internal(err)
 	}
 
-	// Downgrade old owner to admin
-	query3 := `
-		UPDATE organization_members 
-		SET role = $3, updated_at = $4 
-		WHERE organization_id = $1 AND user_id = $2 AND deleted_at IS NULL`
-	if _, err := tx.Exec(query3, orgID, oldOwnerID, models.RoleAdmin, now); err != nil {
-		logger.Error("Failed to downgrade old owner role", err)
+	// 3. Demote Old Owner (Owner -> Admin)
+	if _, err := tx.ExecContext(writeCtx, "UPDATE organization_members SET role = $1, updated_at = $2 WHERE organization_id = $3 AND user_id = $4", models.RoleAdmin, now, orgID, oldOwnerID); err != nil {
+		logger.Error("Failed to demote old owner", err)
 		return errors.Internal(err)
 	}
 
-	// Commit transaction
 	if err := tx.Commit(); err != nil {
 		logger.Error("Failed to commit ownership transfer", err)
 		return errors.Internal(err)
 	}
 
-	logger.Info("Ownership transferred", 
-		"org_id", orgID, 
-		"old_owner", oldOwnerID, 
-		"new_owner", newOwnerID,
-	)
+	logger.Info("Ownership transferred", "org_id", orgID, "new_owner", newOwnerID)
 	return nil
 }
 
 // ============================================================================
-// DELETE
+// DELETE (Safe Write)
 // ============================================================================
 
-// RemoveMember soft deletes a member from organization
 func (r *OrganizationRepository) RemoveMember(ctx context.Context, orgID, userID uuid.UUID) error {
-	now := time.Now()
-	query := `
-		UPDATE organization_members 
-		SET deleted_at = $3, updated_at = $4
-		WHERE organization_id = $1 AND user_id = $2 AND deleted_at IS NULL`
+	writeCtx, cancel := r.withWriteContext()
+	defer cancel()
 
-	result, err := r.db.Exec(ctx, query, orgID, userID, now, now)
+	query := `UPDATE organization_members SET deleted_at = $3, updated_at = $4 WHERE organization_id = $1 AND user_id = $2 AND deleted_at IS NULL`
+	now := time.Now()
 	
+	result, err := r.db.Exec(writeCtx, query, orgID, userID, now, now)
 	if err != nil {
-		logger.Error("Failed to remove member", err, "org_id", orgID, "user_id", userID)
+		logger.Error("Failed to remove member", err, "org_id", orgID)
 		return errors.Internal(err)
 	}
-
+	
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
 		return errors.NotFound("Member not found")
 	}
-
-	logger.Debug("Member removed from organization", "org_id", orgID, "user_id", userID)
 	return nil
 }
 
-// SoftDelete soft deletes an organization
 func (r *OrganizationRepository) SoftDelete(ctx context.Context, orgID uuid.UUID) error {
 	now := time.Now()
-	
-	// Append timestamp to slug to allow recreation
-	query := `
-		UPDATE organizations 
-		SET 
-			deleted_at = $2,
-			slug = CONCAT(slug, '-deleted-', $3),
-			updated_at = $4
-		WHERE id = $1 AND deleted_at IS NULL`
-
-	result, err := r.db.Exec(ctx, query, orgID, now, now.Unix(), now)
-	
-	if err != nil {
-		logger.Error("Failed to soft delete organization", err, "org_id", orgID)
-		return errors.Internal(err)
-	}
-
-	rows, _ := result.RowsAffected()
-	if rows == 0 {
-		return errors.NotFound("Organization not found or already deleted")
-	}
-
-	logger.Info("Organization soft deleted", "org_id", orgID)
-	return nil
+	query := `UPDATE organizations SET deleted_at = $2, slug = CONCAT(slug, '-deleted-', $3), updated_at = $4 WHERE id = $1 AND deleted_at IS NULL`
+	return r.performUpdate(query, "delete organization", orgID, orgID, now, now.Unix(), now)
 }
