@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner"; // Sonner import
 import { useAuthStore } from "@/store/auth.store";
-import { useUpdateProfile } from "@/hooks/useUser";
+import { useUpdateProfile } from "@/hooks/use2FA";
 import { useLogout, useResendVerification } from "@/hooks/useAuth";
 import AuthInput from "@/common/AuthInput";
 import SubmitButton from "@/common/SubmitButton";

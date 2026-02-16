@@ -22,8 +22,6 @@ type RegisterRequest struct {
 
 type RegisterResponse struct {
 	Message      string                `json:"message"`
-	User         *UserResponse         `json:"user"`
-	Organization *OrganizationResponse `json:"organization"`
 }
 
 // ============================================================================

@@ -1,3 +1,6 @@
+//=========================== USER TYPES ===========================//
+
+
 export interface UserPreferences {
   theme: string;
   email_notifications: boolean;

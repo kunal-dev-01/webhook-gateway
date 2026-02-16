@@ -1,141 +1,122 @@
 import { axiosClient } from "@/libs/axios";
 import type {
   RegisterRequest,
+  RegisterResponse,
   LoginRequest,
   LoginResponse,
   Verify2FARequest,
+  Verify2FAResponse,
   VerifyEmailRequest,
+  VerifyEmailResponse,
   ResendVerificationRequest,
+  ResendVerificationResponse,
   ForgotPasswordRequest,
+  ForgotPasswordResponse,
   ResetPasswordRequest,
+  ResetPasswordResponse,
   ChangePasswordRequest,
+  ChangePasswordResponse,
   RefreshTokenResponse,
-  Setup2FAResponse,
-  Enable2FARequest,
-  Disable2FARequest,
+  LogoutRequest,
+  LogoutResponse,
   ListSessionsResponse,
 } from "@/types/auth.types";
-import { type MessageResponse } from "@/types/api.types";
+
+// Helper to unwrap backend response format: { success: true, data: {...} }
+function unwrapResponse<T>(response: { data: { success: boolean; data: T } }): T {
+  return response.data.data;
+}
 
 export const authService = {
-  register: async (data: RegisterRequest): Promise<MessageResponse> => {
-    const response = await axiosClient.post<MessageResponse>(
-      "/auth/register",
-      data,
-    );
-    return response.data;
+  // ============================================================================
+  // REGISTER
+  // ============================================================================
+  register: async (data: RegisterRequest): Promise<RegisterResponse> => {
+    const response = await axiosClient.post("/auth/register", data);
+    return unwrapResponse<RegisterResponse>(response);
   },
 
+  // ============================================================================
+  // LOGIN
+  // ============================================================================
   login: async (data: LoginRequest): Promise<LoginResponse> => {
-    const response = await axiosClient.post<LoginResponse>("/auth/login", data);
-    return response.data;
+    const response = await axiosClient.post("/auth/login", data);
+    return unwrapResponse<LoginResponse>(response);
   },
 
-  verify2FA: async (data: Verify2FARequest): Promise<LoginResponse> => {
-    const response = await axiosClient.post<LoginResponse>(
-      "/auth/verify-2fa",
-      data,
-    );
-    return response.data;
+  // ============================================================================
+  // 2FA VERIFICATION (during login)
+  // ============================================================================
+  verify2FA: async (data: Verify2FARequest): Promise<Verify2FAResponse> => {
+    const response = await axiosClient.post("/auth/2fa/verify", data);
+    return unwrapResponse<Verify2FAResponse>(response);
   },
 
-  verifyEmail: async (data: VerifyEmailRequest): Promise<MessageResponse> => {
-    const response = await axiosClient.post<MessageResponse>(
-      "/auth/verify-email",
-      data,
-    );
-    return response.data;
+  // ============================================================================
+  // EMAIL VERIFICATION
+  // ============================================================================
+  verifyEmail: async (data: VerifyEmailRequest): Promise<VerifyEmailResponse> => {
+    const response = await axiosClient.post("/auth/verify-email", data);
+    return unwrapResponse<VerifyEmailResponse>(response);
   },
 
   resendVerification: async (
     data: ResendVerificationRequest,
-  ): Promise<MessageResponse> => {
-    const response = await axiosClient.post<MessageResponse>(
-      "/auth/resend-verification",
-      data,
-    );
-    return response.data;
+  ): Promise<ResendVerificationResponse> => {
+    const response = await axiosClient.post("/auth/resend-verification", data);
+    return unwrapResponse<ResendVerificationResponse>(response);
   },
 
+  // ============================================================================
+  // PASSWORD MANAGEMENT
+  // ============================================================================
   forgotPassword: async (
     data: ForgotPasswordRequest,
-  ): Promise<MessageResponse> => {
-    const response = await axiosClient.post<MessageResponse>(
-      "/auth/forgot-password",
-      data,
-    );
-    return response.data;
+  ): Promise<ForgotPasswordResponse> => {
+    const response = await axiosClient.post("/auth/forgot-password", data);
+    return unwrapResponse<ForgotPasswordResponse>(response);
   },
 
   resetPassword: async (
     data: ResetPasswordRequest,
-  ): Promise<MessageResponse> => {
-    const response = await axiosClient.post<MessageResponse>(
-      "/auth/reset-password",
-      data,
-    );
-    return response.data;
+  ): Promise<ResetPasswordResponse> => {
+    const response = await axiosClient.post("/auth/reset-password", data);
+    return unwrapResponse<ResetPasswordResponse>(response);
   },
 
   changePassword: async (
     data: ChangePasswordRequest,
-  ): Promise<MessageResponse> => {
-    const response = await axiosClient.patch<MessageResponse>(
-      "/auth/change-password",
-      data,
-    );
-    return response.data;
+  ): Promise<ChangePasswordResponse> => {
+    const response = await axiosClient.post("/user/change-password", data);
+    return unwrapResponse<ChangePasswordResponse>(response);
   },
 
+  // ============================================================================
+  // REFRESH TOKEN
+  // ============================================================================
   refreshToken: async (): Promise<RefreshTokenResponse> => {
-    const response =
-      await axiosClient.post<RefreshTokenResponse>("/auth/refresh");
-    return response.data;
+    const response = await axiosClient.post("/auth/refresh");
+    return unwrapResponse<RefreshTokenResponse>(response);
   },
 
-  logout: async (): Promise<MessageResponse> => {
-    const response = await axiosClient.post<MessageResponse>("/auth/logout");
-    return response.data;
+  // ============================================================================
+  // LOGOUT
+  // ============================================================================
+  logout: async (data?: LogoutRequest): Promise<LogoutResponse> => {
+    const response = await axiosClient.post("/user/logout", data || {});
+    return unwrapResponse<LogoutResponse>(response);
   },
 
-  logoutAll: async (): Promise<MessageResponse> => {
-    const response =
-      await axiosClient.post<MessageResponse>("/auth/logout-all");
-    return response.data;
-  },
-
-  setup2FA: async (): Promise<Setup2FAResponse> => {
-    const response =
-      await axiosClient.post<Setup2FAResponse>("/auth/2fa/setup");
-    return response.data;
-  },
-
-  enable2FA: async (data: Enable2FARequest): Promise<MessageResponse> => {
-    const response = await axiosClient.post<MessageResponse>(
-      "/auth/2fa/enable",
-      data,
-    );
-    return response.data;
-  },
-
-  disable2FA: async (data: Disable2FARequest): Promise<MessageResponse> => {
-    const response = await axiosClient.post<MessageResponse>(
-      "/auth/2fa/disable",
-      data,
-    );
-    return response.data;
-  },
-
+  // ============================================================================
+  // SESSIONS
+  // ============================================================================
   getSessions: async (): Promise<ListSessionsResponse> => {
-    const response =
-      await axiosClient.get<ListSessionsResponse>("/auth/sessions");
-    return response.data;
+    const response = await axiosClient.get("/user/sessions");
+    return unwrapResponse<ListSessionsResponse>(response);
   },
 
-  deleteSession: async (sessionId: string): Promise<MessageResponse> => {
-    const response = await axiosClient.delete<MessageResponse>(
-      `/auth/sessions/${sessionId}`,
-    );
-    return response.data;
+  deleteSession: async (sessionId: string): Promise<{ message: string }> => {
+    const response = await axiosClient.delete(`/user/sessions/${sessionId}`);
+    return unwrapResponse<{ message: string }>(response);
   },
 };

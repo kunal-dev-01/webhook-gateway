@@ -10,13 +10,12 @@ import type {
   ForgotPasswordRequest,
   ResetPasswordRequest,
   ChangePasswordRequest,
-  Enable2FARequest,
-  Disable2FARequest,
+  LogoutRequest,
 } from "@/types/auth.types";
 import { ApiError } from "@/types/api.types";
 
 // ============================================================================
-// Registration
+// REGISTER
 // ============================================================================
 
 export const useRegister = () => {
@@ -40,7 +39,7 @@ export const useRegister = () => {
 };
 
 // ============================================================================
-// Login - ENHANCED ✅
+// LOGIN
 // ============================================================================
 
 export const useLogin = () => {
@@ -50,11 +49,12 @@ export const useLogin = () => {
   const mutation = useMutation({
     mutationFn: (data: LoginRequest) => authService.login(data),
     onSuccess: (data) => {
-      if (!data.require_2fa && data.user && data.access_token) {
+      // Only set auth if 2FA is not required
+      if (!data.two_factor_required && data.user && data.access_token) {
         setAuth(data.user, data.access_token);
-        // ✅ Prefetch user data after login
         queryClient.invalidateQueries({ queryKey: ["users", "me"] });
       }
+      // If 2FA required, frontend should redirect to 2FA page with temp_token
     },
     onError: (error: ApiError) => {
       console.error("Login failed:", error);
@@ -74,7 +74,7 @@ export const useLogin = () => {
 };
 
 // ============================================================================
-// Verify 2FA - ENHANCED ✅
+// VERIFY 2FA (during login)
 // ============================================================================
 
 export const useVerify2FA = () => {
@@ -86,7 +86,6 @@ export const useVerify2FA = () => {
     onSuccess: (data) => {
       if (data.user && data.access_token) {
         setAuth(data.user, data.access_token);
-        // ✅ Prefetch user data after 2FA verification
         queryClient.invalidateQueries({ queryKey: ["users", "me"] });
       }
     },
@@ -108,7 +107,7 @@ export const useVerify2FA = () => {
 };
 
 // ============================================================================
-// Email Verification
+// EMAIL VERIFICATION
 // ============================================================================
 
 export const useVerifyEmail = () => {
@@ -117,7 +116,6 @@ export const useVerifyEmail = () => {
   const mutation = useMutation({
     mutationFn: (data: VerifyEmailRequest) => authService.verifyEmail(data),
     onSuccess: () => {
-      // ✅ Refresh user data to show email_verified: true
       queryClient.invalidateQueries({ queryKey: ["users", "me"] });
     },
     onError: (error: ApiError) => {
@@ -138,7 +136,7 @@ export const useVerifyEmail = () => {
 };
 
 // ============================================================================
-// Resend Verification
+// RESEND VERIFICATION
 // ============================================================================
 
 export const useResendVerification = () => {
@@ -163,7 +161,7 @@ export const useResendVerification = () => {
 };
 
 // ============================================================================
-// Forgot Password
+// FORGOT PASSWORD
 // ============================================================================
 
 export const useForgotPassword = () => {
@@ -188,7 +186,7 @@ export const useForgotPassword = () => {
 };
 
 // ============================================================================
-// Reset Password
+// RESET PASSWORD
 // ============================================================================
 
 export const useResetPassword = () => {
@@ -212,7 +210,7 @@ export const useResetPassword = () => {
 };
 
 // ============================================================================
-// Change Password - FIXED ✅
+// CHANGE PASSWORD
 // ============================================================================
 
 export const useChangePassword = () => {
@@ -222,7 +220,6 @@ export const useChangePassword = () => {
     mutationFn: (data: ChangePasswordRequest) =>
       authService.changePassword(data),
     onSuccess: () => {
-      // ✅ FIXED: Invalidate user data to refresh password_changed_at
       queryClient.invalidateQueries({ queryKey: ["users", "me"] });
     },
     onError: (error: ApiError) => {
@@ -243,7 +240,7 @@ export const useChangePassword = () => {
 };
 
 // ============================================================================
-// Logout - ENHANCED ✅
+// LOGOUT
 // ============================================================================
 
 export const useLogout = () => {
@@ -251,15 +248,15 @@ export const useLogout = () => {
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: authService.logout,
+    mutationFn: (data?: LogoutRequest) => authService.logout(data),
     onSuccess: () => {
       clearAuth();
       queryClient.clear();
       window.location.replace("/auth/login");
     },
     onError: (error: ApiError) => {
-      // ✅ Even on error, clear auth (cookie might be invalid)
       console.error("Logout failed:", error);
+      // Clear auth even on error
       clearAuth();
       queryClient.clear();
       window.location.replace("/auth/login");
@@ -278,126 +275,7 @@ export const useLogout = () => {
 };
 
 // ============================================================================
-// Logout All - ENHANCED ✅
-// ============================================================================
-
-export const useLogoutAll = () => {
-  const clearAuth = useAuthStore((state) => state.clearAuth);
-  const queryClient = useQueryClient();
-
-  const mutation = useMutation({
-    mutationFn: authService.logoutAll,
-    onSuccess: () => {
-      clearAuth();
-      queryClient.clear();
-      window.location.replace("/auth/login");
-    },
-    onError: (error: ApiError) => {
-      // ✅ Even on error, clear auth
-      console.error("Logout all failed:", error);
-      clearAuth();
-      queryClient.clear();
-      window.location.replace("/auth/login");
-    },
-  });
-
-  return {
-    logoutAll: mutation.mutate,
-    logoutAllAsync: mutation.mutateAsync,
-    isPending: mutation.isPending,
-    isSuccess: mutation.isSuccess,
-    isError: mutation.isError,
-    error: mutation.error as ApiError | null,
-    reset: mutation.reset,
-  };
-};
-
-// ============================================================================
-// Setup 2FA
-// ============================================================================
-
-export const useSetup2FA = () => {
-  const mutation = useMutation({
-    mutationFn: authService.setup2FA,
-    onError: (error: ApiError) => {
-      console.error("Setup 2FA failed:", error);
-    },
-  });
-
-  return {
-    setup2FA: mutation.mutate,
-    setup2FAAsync: mutation.mutateAsync,
-    isPending: mutation.isPending,
-    isSuccess: mutation.isSuccess,
-    isError: mutation.isError,
-    error: mutation.error as ApiError | null,
-    data: mutation.data,
-    reset: mutation.reset,
-  };
-};
-
-// ============================================================================
-// Enable 2FA - FIXED ✅
-// ============================================================================
-
-export const useEnable2FA = () => {
-  const queryClient = useQueryClient();
-
-  const mutation = useMutation({
-    mutationFn: (data: Enable2FARequest) => authService.enable2FA(data),
-    onSuccess: () => {
-      // ✅ FIXED: Correct query key to match useMe hook
-      queryClient.invalidateQueries({ queryKey: ["users", "me"] });
-    },
-    onError: (error: ApiError) => {
-      console.error("Enable 2FA failed:", error);
-    },
-  });
-
-  return {
-    enable2FA: mutation.mutate,
-    enable2FAAsync: mutation.mutateAsync,
-    isPending: mutation.isPending,
-    isSuccess: mutation.isSuccess,
-    isError: mutation.isError,
-    error: mutation.error as ApiError | null,
-    data: mutation.data,
-    reset: mutation.reset,
-  };
-};
-
-// ============================================================================
-// Disable 2FA - FIXED ✅
-// ============================================================================
-
-export const useDisable2FA = () => {
-  const queryClient = useQueryClient();
-
-  const mutation = useMutation({
-    mutationFn: (data: Disable2FARequest) => authService.disable2FA(data),
-    onSuccess: () => {
-      // ✅ FIXED: Correct query key to match useMe hook
-      queryClient.invalidateQueries({ queryKey: ["users", "me"] });
-    },
-    onError: (error: ApiError) => {
-      console.error("Disable 2FA failed:", error);
-    },
-  });
-
-  return {
-    disable2FA: mutation.mutate,
-    disable2FAAsync: mutation.mutateAsync,
-    isPending: mutation.isPending,
-    isSuccess: mutation.isSuccess,
-    isError: mutation.isError,
-    error: mutation.error as ApiError | null,
-    data: mutation.data,
-    reset: mutation.reset,
-  };
-};
-
-// ============================================================================
-// Sessions - ENHANCED ✅
+// SESSIONS
 // ============================================================================
 
 export const useSessions = () => {
@@ -407,15 +285,15 @@ export const useSessions = () => {
     queryKey: ["sessions"],
     queryFn: authService.getSessions,
     enabled: isAuthenticated,
-    staleTime: 5 * 60 * 1000, // ✅ 5 minutes
-    gcTime: 10 * 60 * 1000,   // ✅ 10 minutes (cache time)
-    refetchOnWindowFocus: false, // ✅ Don't refetch on focus
-    retry: 1, // ✅ Only retry once on failure
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: 1,
   });
 
   return {
-    sessions: query.data?.sessions ?? [], // ✅ Safe default
-    total: query.data?.total ?? 0,        // ✅ Safe default
+    sessions: query.data?.sessions ?? [],
+    total: query.data?.total ?? 0,
     isPending: query.isPending,
     isSuccess: query.isSuccess,
     isError: query.isError,
@@ -425,7 +303,7 @@ export const useSessions = () => {
 };
 
 // ============================================================================
-// Delete Session
+// DELETE SESSION
 // ============================================================================
 
 export const useDeleteSession = () => {
@@ -434,7 +312,6 @@ export const useDeleteSession = () => {
   const mutation = useMutation({
     mutationFn: (sessionId: string) => authService.deleteSession(sessionId),
     onSuccess: () => {
-      // ✅ Refetch sessions list
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
     },
     onError: (error: ApiError) => {

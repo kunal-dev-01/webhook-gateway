@@ -1,9 +1,17 @@
 import { type User } from "./user.types";
 
+// ====================== AUTHENTICATION TYPES ======================
+
 export interface RegisterRequest {
+  full_name: string;
   email: string;
   password: string;
-  full_name: string;
+  plan_tier?: string;
+  billing_period?: string;
+}
+
+export interface RegisterResponse {
+  message: string;
 }
 
 export interface LoginRequest {
@@ -12,29 +20,60 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
-  access_token: string;
-  expires_in: number;
-  token_type: string;
-  user: User;
-  require_2fa?: boolean;
-  temp_token?: string;
+  // If 2FA is DISABLED
+  user?: User;
+  access_token?: string;
+  expires_in?: number;
+
+  // If 2FA is ENABLED
+  two_factor_required: boolean;
+  temp_token?: string; // Valid for 5 minutes
 }
 
 export interface Verify2FARequest {
   temp_token: string;
   code: string;
+  is_recovery?: boolean; // true if using backup code
 }
+
+export interface Verify2FAResponse {
+  user: User;
+  access_token: string;
+  expires_in: number;
+}
+
+export interface RefreshTokenResponse {
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+}
+
+// ====================== EMAIL VERIFICATION ======================
 
 export interface VerifyEmailRequest {
   token: string;
+}
+
+export interface VerifyEmailResponse {
+  message: string;
 }
 
 export interface ResendVerificationRequest {
   email: string;
 }
 
+export interface ResendVerificationResponse {
+  message: string;
+}
+
+// ====================== PASSWORD MANAGEMENT ======================
+
 export interface ForgotPasswordRequest {
   email: string;
+}
+
+export interface ForgotPasswordResponse {
+  message: string;
 }
 
 export interface ResetPasswordRequest {
@@ -42,36 +81,30 @@ export interface ResetPasswordRequest {
   new_password: string;
 }
 
+export interface ResetPasswordResponse {
+  message: string;
+}
+
 export interface ChangePasswordRequest {
   current_password: string;
   new_password: string;
 }
 
-export interface RefreshTokenResponse {
-  access_token: string;
-  expires_in: number;
-  token_type: string;
-}
-
-export interface Setup2FAResponse {
-  secret: string;
-  qr_code_url: string;
-}
-
-export interface Enable2FAResponse {
-  success: boolean;
+export interface ChangePasswordResponse {
   message: string;
-  recovery_codes: string[]; 
 }
 
-// Keep existing
-export interface Enable2FARequest {
-  code: string;
+// ====================== LOGOUT ======================
+
+export interface LogoutRequest {
+  all_devices?: boolean;
 }
 
-export interface Disable2FARequest {
-  password: string;
+export interface LogoutResponse {
+  message: string;
 }
+
+// ====================== SESSIONS ======================
 
 export interface SessionResponse {
   session_id: string;

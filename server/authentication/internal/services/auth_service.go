@@ -227,16 +227,8 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		"plan_name", plan.Name,
 	)
 
-	// Prepare response
-	var orgResponse *dto.OrganizationResponse
-	if organization != nil {
-		orgResponse = dto.ToOrganizationResponse(organization, string(models.RoleOwner))
-	}
-
 	return &dto.RegisterResponse{
 		Message:      "Registration successful! Please check your email to verify your account.",
-		User:         dto.ToUserResponse(user),
-		Organization: orgResponse,
 	}, nil
 }
 
