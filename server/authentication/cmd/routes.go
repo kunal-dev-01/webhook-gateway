@@ -47,7 +47,7 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 	// ============================================================================
 	// 🔴 PROTECTED USER ROUTES (Moderate rate limiting)
 	// ============================================================================
-	user := v1.Group("/user")
+	user := v1.Group("")
 	user.Use(authMiddleware.RequireAuth())
 	{
 		// Moderate rate limit for authenticated users: 100 requests per minute
@@ -58,11 +58,11 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 		user.Use(userRateLimit)
 
 		// Password & Account Management
-		user.Post("/change-password", deps.AuthHandler.ChangePassword)
-		user.Post("/logout", deps.AuthHandler.Logout)
+		user.Post("/auth/change-password", deps.AuthHandler.ChangePassword)
+		user.Post("/auth/logout", deps.AuthHandler.Logout)
 
 		// Session Management (stricter limit)
-		sessions := user.Group("/sessions")
+		sessions := user.Group("/auth/sessions")
 		{
 			sessionRateLimit := rateLimiter.UserRateLimit(middleware.RateLimitConfig{
 				RequestsPerWindow: 20,
@@ -77,7 +77,7 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 		// ============================================================================
 		// TWO-FACTOR AUTHENTICATION (2FA) - Stricter limits
 		// ============================================================================
-		twoFactor := user.Group("/2fa")
+		twoFactor := user.Group("/auth/2fa")
 		{
 			// Strict rate limit for 2FA operations: 15 requests per minute
 			twoFactorRateLimit := rateLimiter.UserRateLimit(middleware.RateLimitConfig{

@@ -19,7 +19,7 @@ export const twoFactorService = {
   // ENABLE 2FA (Step 1: Get QR Code)
   // ============================================================================
   enable: async (): Promise<Enable2FAResponse> => {
-    const response = await axiosClient.post("/user/2fa/enable");
+    const response = await axiosClient.post("/auth/2fa/enable");
     return unwrapResponse<Enable2FAResponse>(response);
   },
 
@@ -27,7 +27,7 @@ export const twoFactorService = {
   // CONFIRM 2FA (Step 2: Verify TOTP code and get backup codes)
   // ============================================================================
   confirm: async (data: Confirm2FARequest): Promise<Confirm2FAResponse> => {
-    const response = await axiosClient.post("/user/2fa/confirm", data);
+    const response = await axiosClient.post("/auth/2fa/confirm", data);
     return unwrapResponse<Confirm2FAResponse>(response);
   },
 
@@ -35,7 +35,7 @@ export const twoFactorService = {
   // DISABLE 2FA
   // ============================================================================
   disable: async (data: Disable2FARequest): Promise<Disable2FAResponse> => {
-    const response = await axiosClient.post("/user/2fa/disable", data);
+    const response = await axiosClient.post("/auth/2fa/disable", data);
     return unwrapResponse<Disable2FAResponse>(response);
   },
 
@@ -45,7 +45,7 @@ export const twoFactorService = {
   regenerateBackupCodes: async (
     data: RegenerateBackupCodesRequest,
   ): Promise<RegenerateBackupCodesResponse> => {
-    const response = await axiosClient.post("/user/2fa/regenerate-codes", data);
+    const response = await axiosClient.post("/auth/2fa/regenerate-codes", data);
     return unwrapResponse<RegenerateBackupCodesResponse>(response);
   },
 };

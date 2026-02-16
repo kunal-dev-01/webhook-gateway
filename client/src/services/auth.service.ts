@@ -87,7 +87,7 @@ export const authService = {
   changePassword: async (
     data: ChangePasswordRequest,
   ): Promise<ChangePasswordResponse> => {
-    const response = await axiosClient.post("/user/change-password", data);
+    const response = await axiosClient.post("/auth/change-password", data);
     return unwrapResponse<ChangePasswordResponse>(response);
   },
 
@@ -103,7 +103,7 @@ export const authService = {
   // LOGOUT
   // ============================================================================
   logout: async (data?: LogoutRequest): Promise<LogoutResponse> => {
-    const response = await axiosClient.post("/user/logout", data || {});
+    const response = await axiosClient.post("/auth/logout", data || {});
     return unwrapResponse<LogoutResponse>(response);
   },
 
@@ -111,12 +111,12 @@ export const authService = {
   // SESSIONS
   // ============================================================================
   getSessions: async (): Promise<ListSessionsResponse> => {
-    const response = await axiosClient.get("/user/sessions");
+    const response = await axiosClient.get("/auth/sessions");
     return unwrapResponse<ListSessionsResponse>(response);
   },
 
   deleteSession: async (sessionId: string): Promise<{ message: string }> => {
-    const response = await axiosClient.delete(`/user/sessions/${sessionId}`);
+    const response = await axiosClient.delete(`/auth/sessions/${sessionId}`);
     return unwrapResponse<{ message: string }>(response);
   },
 };
