@@ -123,7 +123,7 @@ export const ChevronDown = memo(
 // ================= Settings ================= //
 export const Settings = memo(
   ({
-    className = "w-5 h-5 text-zinc-600 dark:text-zinc-400",
+    className = "w-7 h-7 z-10 transition-colors duration-200",
   }: {
     className?: string;
   }) => (
@@ -248,7 +248,7 @@ export const EyeOpen = memo(
         <path d="M12 3c5.591 0 10.29 3.824 11.622 9c-1.332 5.176-6.03 9-11.622 9S1.71 17.176.378 12C1.71 6.824 6.408 3 12 3Zm0 16c-4.476 0-8.269-2.942-9.543-7C3.731 7.942 7.524 5 12 5c4.476 0 8.269 2.942 9.543 7c-1.274 4.058-5.067 7-9.543 7Z" />
       </g>
     </svg>
-  )
+  ),
 );
 
 // ================= EyeClose ================= //
@@ -271,7 +271,7 @@ export const EyeClose = memo(
         d="M21 16a5 5 0 0 1-5 5m-5-5a5 5 0 0 1 5-5m-3 13.654A13.38 13.38 0 0 0 16 25c7.18 0 13-6 13-9c0-1.336-1.155-3.268-3.071-5M19.5 7.47A13.49 13.49 0 0 0 16 7C8.82 7 3 13 3 16c0 1.32 1.127 3.22 3 4.935M7 25L25 7"
       />
     </svg>
-  )
+  ),
 );
 
 // ================= CircleCheck ================= //
@@ -293,7 +293,7 @@ export const CircleCheck = memo(
         d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
       />
     </svg>
-  )
+  ),
 );
 
 // ================= Mail ================= //
@@ -312,7 +312,7 @@ export const Mail = memo(
         d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
       />
     </svg>
-  )
+  ),
 );
 
 // ========================= Refresh =========================
@@ -335,7 +335,7 @@ export const Refresh = memo(
         fill="currentColor"
       />
     </svg>
-  )
+  ),
 );
 
 // ========================== Shield ===========================
@@ -356,9 +356,28 @@ export const Shield = memo(
         fill="currentColor"
       />
     </svg>
-  )
+  ),
 );
 
+// ========================= Bell ===========================
+export const Bell = memo(
+  ({ className = "w-7 h-7 z-10 transition-colors duration-200" }: { className?: string }) => (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke-width="2"
+      stroke="currentColor"
+      className={className}
+    >
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"
+      />
+    </svg>
+  ),
+);
 
 Check.displayName = "Check";
 X.displayName = "X";
@@ -377,5 +396,4 @@ CircleCheck.displayName = "CircleCheck";
 Mail.displayName = "Mail";
 Refresh.displayName = "Refresh";
 Shield.displayName = "Shield";
-
-
+Bell.displayName = "Bell";

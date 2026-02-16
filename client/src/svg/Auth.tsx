@@ -66,7 +66,7 @@ export const Lock = memo(
 );
 
 // ================= Dashboard ================== //
-export const Dashboard = memo(({ className }: { className?: string }) => (
+export const Dashboard = memo(({ className="w-6 h-6 z-10 transition-colors duration-200" }: { className?: string }) => (
   <svg
     className={className}
     width="100%"

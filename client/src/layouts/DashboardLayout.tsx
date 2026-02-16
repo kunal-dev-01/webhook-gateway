@@ -1,5 +1,5 @@
-import { Credits, Dashboard } from "@/svg/Auth";
-import { Settings } from "@/svg/Common";
+import { Dashboard } from "@/svg/Auth";
+import { Bell, Settings } from "@/svg/Common";
 import { memo, useMemo, type FC } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 
@@ -40,10 +40,10 @@ const NavItem = memo(({ item, isActive, onClick }: NavItemProps) => {
       />
 
       {/* Icon - No Scaling, Only Color Transition */}
-      <Icon className="w-5.5 h-5.5 z-10 transition-colors duration-200" />
+      <Icon />
 
       {/* Tooltip */}
-      <span className="absolute -top-10 scale-0 group-hover:scale-100 transition-all duration-200 bg-zinc-900 dark:bg-zinc-100 text-zinc-100 dark:text-zinc-900 text-[10px] font-medium px-2.5 py-1 rounded-full pointer-events-none shadow-sm">
+      <span className="absolute opacity-0 -top-12 scale-50 group-hover:opacity-100 group-hover:scale-100 transition-all duration-200 bg-zinc-900 dark:bg-zinc-100 text-zinc-100 dark:text-zinc-900 text-md font-medium px-2.5 py-1 rounded-full pointer-events-none">
         {item.label}
       </span>
     </button>
@@ -57,7 +57,7 @@ const DashboardLayout: FC = () => {
 
   const navItems = useMemo<NavItemConfig[]>(() => [
     { label: "Dashboard", path: "/dashboard", icon: Dashboard },
-    { label: "Credits", path: "/credits", icon: Credits },
+    { label: "Notifications", path: "/notifications", icon: Bell },
     { label: "Settings", path: "/settings", icon: Settings },
   ], []);
 
@@ -74,7 +74,7 @@ const DashboardLayout: FC = () => {
       </main>
 
       {/* Floating Thin Nav Bar */}
-      <div className="fixed bottom-6 z-50 px-4 w-full flex justify-center pointer-events-none">
+      <div className="fixed lg:bottom-6 bottom-2 z-50 px-4 w-full flex justify-center pointer-events-none">
         <nav className="
             pointer-events-auto
             flex items-center justify-between sm:justify-center 

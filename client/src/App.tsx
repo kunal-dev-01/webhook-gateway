@@ -20,7 +20,7 @@ const Dashboard = lazy(() => import("./pages/dashboard/Dashboard"));
 const Settings = lazy(() => import("./pages/settings/Settings"));
 
 // CREDITS PAGES
-const Credits = lazy(() => import("./pages/credits/Credits"));
+const Notifications = lazy(() => import("./pages/notifications/Notifications"));
 
 // NOT FOUND
 const NotFound = lazy(() => import("./pages/notfound/NotFound"));
@@ -45,7 +45,7 @@ const App = () => {
 
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/credits" element={<Credits />} />
+          <Route path="/notifications" element={<Notifications />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
 
