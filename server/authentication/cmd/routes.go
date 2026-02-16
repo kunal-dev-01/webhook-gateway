@@ -8,27 +8,23 @@ import (
 )
 
 func SetupRoutes(app *fiber.App, deps *Dependencies) {
-	// Create auth middleware
+	// Create middleware
 	authMiddleware := middleware.NewAuthMiddleware(deps.JWTManager, deps.Redis.Client)
-
-	// Rate limiter
 	rateLimiter := middleware.NewRateLimiter(deps.Redis.Client)
 
 	// API v1 Group
 	v1 := app.Group("/api/v1")
 
 	// ============================================================================
-	// PUBLIC AUTH ROUTES (No authentication required)
+	// 🟢 PUBLIC AUTH ROUTES (Strict rate limiting)
 	// ============================================================================
 	auth := v1.Group("/auth")
 	{
-		// Rate limit: 10 requests per minute for auth endpoints
+		// Strict rate limit for public auth: 10 requests per minute
 		authRateLimit := rateLimiter.Middleware(middleware.RateLimitConfig{
 			RequestsPerWindow: 10,
 			WindowDuration:    60 * time.Second,
-			BypassPaths:       []string{"/api/v1/auth/verify-email"},
 		})
-
 		auth.Use(authRateLimit)
 
 		// Registration & Email Verification
@@ -49,29 +45,47 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 	}
 
 	// ============================================================================
-	// PROTECTED ROUTES (Authentication required)
+	// 🔴 PROTECTED USER ROUTES (Moderate rate limiting)
 	// ============================================================================
-	protected := v1.Group("")
-	protected.Use(authMiddleware.RequireAuth())
+	user := v1.Group("/user")
+	user.Use(authMiddleware.RequireAuth())
 	{
-		// Password Management
-		protected.Post("/auth/change-password", deps.AuthHandler.ChangePassword)
+		// Moderate rate limit for authenticated users: 100 requests per minute
+		userRateLimit := rateLimiter.UserRateLimit(middleware.RateLimitConfig{
+			RequestsPerWindow: 100,
+			WindowDuration:    60 * time.Second,
+		})
+		user.Use(userRateLimit)
 
-		// Logout
-		protected.Post("/auth/logout", deps.AuthHandler.Logout)
+		// Password & Account Management
+		user.Post("/change-password", deps.AuthHandler.ChangePassword)
+		user.Post("/logout", deps.AuthHandler.Logout)
 
-		// Session Management
-		sessions := protected.Group("/sessions")
+		// Session Management (stricter limit)
+		sessions := user.Group("/sessions")
 		{
+			sessionRateLimit := rateLimiter.UserRateLimit(middleware.RateLimitConfig{
+				RequestsPerWindow: 20,
+				WindowDuration:    60 * time.Second,
+			})
+			sessions.Use(sessionRateLimit)
+
 			sessions.Get("/", deps.AuthHandler.GetActiveSessions)
 			sessions.Delete("/:session_id", deps.AuthHandler.RevokeSession)
 		}
 
 		// ============================================================================
-		// TWO-FACTOR AUTHENTICATION (2FA) - Protected Routes
+		// TWO-FACTOR AUTHENTICATION (2FA) - Stricter limits
 		// ============================================================================
-		twoFactor := protected.Group("/auth/2fa")
+		twoFactor := user.Group("/2fa")
 		{
+			// Strict rate limit for 2FA operations: 15 requests per minute
+			twoFactorRateLimit := rateLimiter.UserRateLimit(middleware.RateLimitConfig{
+				RequestsPerWindow: 15,
+				WindowDuration:    60 * time.Second,
+			})
+			twoFactor.Use(twoFactorRateLimit)
+
 			// Get 2FA status
 			twoFactor.Get("/status", deps.TwoFactorHandler.Get2FAStatus)
 
@@ -81,7 +95,7 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 			// Confirm 2FA (Step 2: Verify TOTP code)
 			twoFactor.Post("/confirm", deps.TwoFactorHandler.Confirm2FA)
 
-			// Disable 2FA (Requires password + code/recovery)
+			// Disable 2FA
 			twoFactor.Post("/disable", deps.TwoFactorHandler.Disable2FA)
 
 			// Regenerate backup codes

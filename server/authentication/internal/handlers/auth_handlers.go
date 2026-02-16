@@ -70,7 +70,12 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"success": true,
-		"data":    resp,
+		"data":    fiber.Map{
+			"two_factor_required": resp.TwoFactorRequired,
+			"access_token"        : resp.AccessToken,
+			"expires_in"          : resp.ExpiresIn,
+			"User":            resp.User,
+		},
 	})
 }
 
@@ -89,7 +94,11 @@ func (h *AuthHandler) Verify2FA(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"success": true,
-		"data":    resp,
+		"data":    fiber.Map{
+			"access_token"        : resp.AccessToken,
+			"expires_in"          : resp.ExpiresIn,
+			"User":            resp.User,
+		},
 	})
 }
 

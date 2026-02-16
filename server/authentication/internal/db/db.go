@@ -101,13 +101,9 @@ func (db *DB) Exec(ctx context.Context, query string, args ...any) (sql.Result, 
 // Query executes a query that returns rows
 func (db *DB) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	start := time.Now()
-	
 	// Use background context with timeout for independence
-	queryCtx, cancel := db.withQueryContext()
-	defer cancel()
-	
+	queryCtx, _ := db.withQueryContext()
 	rows, err := db.DB.QueryContext(queryCtx, query, args...)
-	
 	db.logQuery("query", query, time.Since(start), err)
 	return rows, err
 }
@@ -115,16 +111,10 @@ func (db *DB) Query(ctx context.Context, query string, args ...any) (*sql.Rows, 
 // QueryRow executes a query that is expected to return at most one row
 func (db *DB) QueryRow(ctx context.Context, query string, args ...any) *sql.Row {
 	start := time.Now()
-	
-	// Use background context with timeout for independence
-	queryCtx, cancel := db.withQueryContext()
-	defer cancel()
-	
+	queryCtx, _ := db.withQueryContext()
+	// No defer - context will timeout automatically
 	row := db.DB.QueryRowContext(queryCtx, query, args...)
-	
-	// Log immediately (errors will be caught during Scan)
 	db.logQuery("query_row", query, time.Since(start), nil)
-	
 	return row
 }
 
