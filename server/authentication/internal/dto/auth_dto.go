@@ -13,16 +13,16 @@ import (
 // ============================================================================
 
 type RegisterRequest struct {
-	FullName string `json:"full_name" validate:"required,min=2,max=255"`
-	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required,min=8,max=72"`
+	FullName      string  `json:"full_name" validate:"required,min=2,max=255"`
+	Email         string  `json:"email" validate:"required,email"`
+	Password      string  `json:"password" validate:"required,min=8,max=72"`
 	PlanTier      *string `json:"plan_tier,omitempty"`
 	BillingPeriod *string `json:"billing_period,omitempty"`
 }
 
 type RegisterResponse struct {
-	Message string        `json:"message"`
-	User    *UserResponse `json:"user"`
+	Message      string                `json:"message"`
+	User         *UserResponse         `json:"user"`
 	Organization *OrganizationResponse `json:"organization"`
 }
 
@@ -148,29 +148,40 @@ type ChangePasswordResponse struct {
 // 2FA MANAGEMENT
 // ============================================================================
 
-type Enable2FAResponse struct {
-	QRCodeURL string `json:"qr_code_url"`
-	Secret    string `json:"secret"` // For manual entry
+// Get 2FA Status
+type TwoFactorStatusResponse struct {
+	Enabled     bool       `json:"enabled"`
+	ConfirmedAt *time.Time `json:"confirmed_at,omitempty"`
 }
 
+// Enable 2FA (Step 1)
+type Enable2FAResponse struct {
+	QRCodeURL string `json:"qr_code_url"` // Base64 data URL
+	Secret    string `json:"secret"`      // For manual entry
+}
+
+// Confirm 2FA (Step 2)
 type Confirm2FARequest struct {
 	Code string `json:"code" validate:"required,len=6"` // TOTP code to confirm setup
 }
 
 type Confirm2FAResponse struct {
-	Message      string   `json:"message"`
-	BackupCodes  []string `json:"backup_codes"` // Show once, user must save
+	Message     string   `json:"message"`
+	BackupCodes []string `json:"backup_codes"` // Show once, user must save
 }
 
+// Disable 2FA
 type Disable2FARequest struct {
-	Password string `json:"password" validate:"required"` // Require password for security
-	Code     string `json:"code" validate:"required,len=6"` // Current 2FA code
+	Password     string `json:"password" validate:"required"` // Require password for security
+	Code         string `json:"code,omitempty"`               // TOTP code
+	RecoveryCode string `json:"recovery_code,omitempty"`      // OR recovery code
 }
 
 type Disable2FAResponse struct {
 	Message string `json:"message"`
 }
 
+// Regenerate Backup Codes
 type RegenerateBackupCodesRequest struct {
 	Password string `json:"password" validate:"required"`
 }
@@ -221,34 +232,34 @@ type GetMeResponse struct {
 
 // UserResponse represents user data in auth responses
 type UserResponse struct {
-	ID                   uuid.UUID               `json:"id"`
-	Email                string                  `json:"email"`
-	FullName             string                  `json:"full_name"`
-	AvatarURL            *string                 `json:"avatar_url,omitempty"`
-	EmailVerified        bool                    `json:"email_verified"`
-	TwoFactorEnabled     bool                    `json:"two_factor_enabled"`
-	TwoFactorConfirmedAt *time.Time              `json:"two_factor_confirmed_at,omitempty"`
-	Preferences          models.UserPreferences  `json:"preferences"`
-	CreatedAt            time.Time               `json:"created_at"`
+	ID                   uuid.UUID              `json:"id"`
+	Email                string                 `json:"email"`
+	FullName             string                 `json:"full_name"`
+	AvatarURL            *string                `json:"avatar_url,omitempty"`
+	EmailVerified        bool                   `json:"email_verified"`
+	TwoFactorEnabled     bool                   `json:"two_factor_enabled"`
+	TwoFactorConfirmedAt *time.Time             `json:"two_factor_confirmed_at,omitempty"`
+	Preferences          models.UserPreferences `json:"preferences"`
+	CreatedAt            time.Time              `json:"created_at"`
 }
 
 // OrganizationResponse represents organization data in auth responses
 type OrganizationResponse struct {
-	ID                 uuid.UUID              `json:"id"`
-	Name               string                 `json:"name"`
-	Slug               string                 `json:"slug"`
-	OwnerID            uuid.UUID              `json:"owner_id"`
-	Role               string                 `json:"role"` // User's role in this org
-	PlanTier           models.PlanTier        `json:"plan_tier"`
-	BillingPeriod      models.BillingPeriod   `json:"billing_period"`
-	SubscriptionStatus models.SubscriptionStatus `json:"subscription_status"`
-	MonthlyEventsLimit int64                  `json:"monthly_events_limit"`
-	MonthlyEventsUsed  int64                  `json:"monthly_events_used"`
-	RetentionDays      int                    `json:"retention_days"`
-	TeamSeatsLimit     int                    `json:"team_seats_limit"`
-	RateLimitPerSecond int                    `json:"rate_limit_per_second"`
-	ProjectsLimit      int                    `json:"projects_limit"`
-	CreatedAt          time.Time              `json:"created_at"`
+	ID                 uuid.UUID                     `json:"id"`
+	Name               string                        `json:"name"`
+	Slug               string                        `json:"slug"`
+	OwnerID            uuid.UUID                     `json:"owner_id"`
+	Role               string                        `json:"role"` // User's role in this org
+	PlanTier           models.PlanTier               `json:"plan_tier"`
+	BillingPeriod      models.BillingPeriod          `json:"billing_period"`
+	SubscriptionStatus models.SubscriptionStatus     `json:"subscription_status"`
+	MonthlyEventsLimit int64                         `json:"monthly_events_limit"`
+	MonthlyEventsUsed  int64                         `json:"monthly_events_used"`
+	RetentionDays      int                           `json:"retention_days"`
+	TeamSeatsLimit     int                           `json:"team_seats_limit"`
+	RateLimitPerSecond int                           `json:"rate_limit_per_second"`
+	ProjectsLimit      int                           `json:"projects_limit"`
+	CreatedAt          time.Time                     `json:"created_at"`
 }
 
 // ============================================================================

@@ -53,6 +53,7 @@ func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 		return errors.Wrap(err, 500, "Failed to create user")
 	}
 
+	logger.Debug("User created successfully", "user_id", user.ID, "email", user.Email)
 	return nil
 }
 
@@ -165,6 +166,7 @@ func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
 		return errors.NotFound("User not found")
 	}
 
+	logger.Debug("User updated successfully", "user_id", user.ID)
 	return nil
 }
 
@@ -188,6 +190,7 @@ func (r *UserRepository) UpdatePassword(ctx context.Context, userID uuid.UUID, p
 		return errors.NotFound("User not found")
 	}
 
+	logger.Debug("Password updated successfully", "user_id", userID)
 	return nil
 }
 
@@ -211,6 +214,7 @@ func (r *UserRepository) MarkEmailVerified(ctx context.Context, userID uuid.UUID
 		return errors.NotFound("User not found")
 	}
 
+	logger.Debug("Email marked as verified", "user_id", userID)
 	return nil
 }
 
@@ -234,6 +238,7 @@ func (r *UserRepository) UpdatePreferences(ctx context.Context, userID uuid.UUID
 		return errors.NotFound("User not found")
 	}
 
+	logger.Debug("User preferences updated", "user_id", userID)
 	return nil
 }
 
@@ -266,6 +271,7 @@ func (r *UserRepository) Enable2FA(ctx context.Context, userID uuid.UUID, secret
 		return errors.NotFound("User not found")
 	}
 
+	logger.Info("2FA enabled for user", "user_id", userID)
 	return nil
 }
 
@@ -294,6 +300,7 @@ func (r *UserRepository) Disable2FA(ctx context.Context, userID uuid.UUID) error
 		return errors.NotFound("User not found")
 	}
 
+	logger.Info("2FA disabled for user", "user_id", userID)
 	return nil
 }
 
@@ -326,6 +333,7 @@ func (r *UserRepository) SoftDelete(ctx context.Context, userID uuid.UUID) error
 		return errors.NotFound("User not found or already deleted")
 	}
 
+	logger.Info("User soft deleted", "user_id", userID)
 	return nil
 }
 
@@ -354,5 +362,6 @@ func (r *UserRepository) Restore(ctx context.Context, userID uuid.UUID) error {
 		return errors.NotFound("User not found or not deleted")
 	}
 
+	logger.Info("User restored", "user_id", userID)
 	return nil
 }

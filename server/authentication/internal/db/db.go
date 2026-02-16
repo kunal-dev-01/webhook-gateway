@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"shared/config" 
-	"shared/logger"    
+	"shared/config"
+	"shared/logger"
 
 	_ "github.com/lib/pq"
 )
@@ -17,7 +17,7 @@ type DB struct {
 	cfg *config.DatabaseConfig
 }
 
-// Connect initializes the database connection with retry logic and custom logging
+// Connect initializes the database connection with retry logic
 func Connect(cfg *config.DatabaseConfig) (*DB, error) {
 	var db *sql.DB
 	var err error
@@ -28,7 +28,6 @@ func Connect(cfg *config.DatabaseConfig) (*DB, error) {
 	)
 
 	for attempt := 1; attempt <= cfg.RetryAttempts; attempt++ {
-		// Logger use kar rahe hain instead of fmt.Printf
 		logger.Info("Connecting to database...", "attempt", attempt, "max_attempts", cfg.RetryAttempts)
 
 		db, err = sql.Open("postgres", dsn)
@@ -75,40 +74,41 @@ func (db *DB) Close() error {
 	return db.DB.Close()
 }
 
+// ───────────────── Context Helper ─────────────────
+
+// withQueryContext creates a context with timeout for DB operations
+// It ALWAYS uses background context to avoid HTTP request cancellation issues
+func (db *DB) withQueryContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), db.cfg.QueryTimeout)
+}
+
 // ───────────────── Instrumented Wrappers ─────────────────
 
 // Exec executes a query without returning any rows
 func (db *DB) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	start := time.Now()
-	var err error
-
-	// Defer logger execution to capture duration and error
-	defer func() {
-		logger.Get().Database("exec", time.Since(start), err, "query_snippet", getQuerySnippet(query))
-	}()
-
-	ctx, cancel := context.WithTimeout(ctx, db.cfg.QueryTimeout)
+	
+	// Use background context with timeout for independence
+	queryCtx, cancel := db.withQueryContext()
 	defer cancel()
-
-	res, execErr := db.DB.ExecContext(ctx, query, args...)
-	err = execErr // Assign to outer err for the deferred logger
+	
+	res, err := db.DB.ExecContext(queryCtx, query, args...)
+	
+	db.logQuery("exec", query, time.Since(start), err)
 	return res, err
 }
 
 // Query executes a query that returns rows
 func (db *DB) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	start := time.Now()
-	var err error
-
-	defer func() {
-		logger.Get().Database("query", time.Since(start), err, "query_snippet", getQuerySnippet(query))
-	}()
-
-	ctx, cancel := context.WithTimeout(ctx, db.cfg.QueryTimeout)
+	
+	// Use background context with timeout for independence
+	queryCtx, cancel := db.withQueryContext()
 	defer cancel()
-
-	rows, queryErr := db.DB.QueryContext(ctx, query, args...)
-	err = queryErr
+	
+	rows, err := db.DB.QueryContext(queryCtx, query, args...)
+	
+	db.logQuery("query", query, time.Since(start), err)
 	return rows, err
 }
 
@@ -116,21 +116,65 @@ func (db *DB) Query(ctx context.Context, query string, args ...any) (*sql.Rows, 
 func (db *DB) QueryRow(ctx context.Context, query string, args ...any) *sql.Row {
 	start := time.Now()
 	
-	// QueryRow errors are returned when Scanning, but we can log the attempt
-	defer func() {
-		logger.Get().Database("query_row", time.Since(start), nil, "query_snippet", getQuerySnippet(query))
-	}()
-
-	ctx, cancel := context.WithTimeout(ctx, db.cfg.QueryTimeout)
+	// Use background context with timeout for independence
+	queryCtx, cancel := db.withQueryContext()
 	defer cancel()
+	
+	row := db.DB.QueryRowContext(queryCtx, query, args...)
+	
+	// Log immediately (errors will be caught during Scan)
+	db.logQuery("query_row", query, time.Since(start), nil)
+	
+	return row
+}
 
-	return db.DB.QueryRowContext(ctx, query, args...)
+// ───────────────── Transaction Support ─────────────────
+
+// BeginTx starts a transaction
+func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	// For transactions, use background context but with longer timeout
+	txCtx, cancel := context.WithTimeout(context.Background(), db.cfg.QueryTimeout*5)
+	defer cancel()
+	
+	return db.DB.BeginTx(txCtx, opts)
+}
+
+// ───────────────── Logging Helper ─────────────────
+
+func (db *DB) logQuery(operation, query string, duration time.Duration, err error) {
+	if err != nil && err != sql.ErrNoRows {
+		logger.Get().Database(operation, duration, err, 
+			"query_snippet", getQuerySnippet(query),
+		)
+	} else {
+		// Only log slow queries in production (> 100ms)
+		if duration > 100*time.Millisecond {
+			logger.Get().Database(operation, duration, nil,
+				"query_snippet", getQuerySnippet(query),
+				"slow_query", true,
+			)
+		}
+	}
 }
 
 // Helper to keep logs clean
 func getQuerySnippet(query string) string {
-	if len(query) > 50 {
-		return query[:50] + "..."
+	if len(query) > 80 {
+		return query[:80] + "..."
 	}
 	return query
+}
+
+// ───────────────── Health Check ─────────────────
+
+// Ping checks if database is reachable
+func (db *DB) Ping(ctx context.Context) error {
+	pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return db.DB.PingContext(pingCtx)
+}
+
+// Stats returns connection pool statistics
+func (db *DB) Stats() sql.DBStats {
+	return db.DB.Stats()
 }

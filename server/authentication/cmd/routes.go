@@ -10,7 +10,7 @@ import (
 func SetupRoutes(app *fiber.App, deps *Dependencies) {
 	// Create auth middleware
 	authMiddleware := middleware.NewAuthMiddleware(deps.JWTManager, deps.Redis.Client)
-	
+
 	// Rate limiter
 	rateLimiter := middleware.NewRateLimiter(deps.Redis.Client)
 
@@ -30,12 +30,12 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 		})
 
 		auth.Use(authRateLimit)
-		
+
 		// Registration & Email Verification
 		auth.Post("/register", deps.AuthHandler.Register)
 		auth.Post("/verify-email", deps.AuthHandler.VerifyEmail)
 		auth.Post("/resend-verification", deps.AuthHandler.ResendVerificationEmail)
-		
+
 		// Password Reset
 		auth.Post("/forgot-password", deps.AuthHandler.ForgotPassword)
 		auth.Post("/reset-password", deps.AuthHandler.ResetPassword)
@@ -49,7 +49,7 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 	{
 		// Password Management
 		protected.Post("/auth/change-password", deps.AuthHandler.ChangePassword)
-		
+
 		// Logout
 		protected.Post("/auth/logout", deps.AuthHandler.Logout)
 
@@ -58,6 +58,27 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 		{
 			sessions.Get("/", deps.AuthHandler.GetActiveSessions)
 			sessions.Delete("/:session_id", deps.AuthHandler.RevokeSession)
+		}
+
+		// ============================================================================
+		// TWO-FACTOR AUTHENTICATION (2FA) - Protected Routes
+		// ============================================================================
+		twoFactor := protected.Group("/auth/2fa")
+		{
+			// Get 2FA status
+			twoFactor.Get("/status", deps.TwoFactorHandler.Get2FAStatus)
+
+			// Enable 2FA (Step 1: Generate QR code)
+			twoFactor.Post("/enable", deps.TwoFactorHandler.Enable2FA)
+
+			// Confirm 2FA (Step 2: Verify TOTP code)
+			twoFactor.Post("/confirm", deps.TwoFactorHandler.Confirm2FA)
+
+			// Disable 2FA (Requires password + code/recovery)
+			twoFactor.Post("/disable", deps.TwoFactorHandler.Disable2FA)
+
+			// Regenerate backup codes
+			twoFactor.Post("/regenerate-codes", deps.TwoFactorHandler.RegenerateBackupCodes)
 		}
 	}
 }

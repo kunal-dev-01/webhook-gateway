@@ -1,10 +1,11 @@
 package main
 
 import (
-	"strings"
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -32,7 +33,7 @@ import (
 type Dependencies struct {
 	Config *config.Config
 	DB     *db.DB
-	Redis  *redis.Client // LOCAL REDIS
+	Redis  *redis.Client
 	Logger *logger.Logger
 
 	// Repositories
@@ -48,10 +49,12 @@ type Dependencies struct {
 
 	// Services
 	AuthService  *services.AuthService
+	TwoFactorService  *services.TwoFactorService
 	EmailService *utils.EmailService
 
 	// Handlers
 	AuthHandler *handlers.AuthHandler
+	TwoFactorHandler *handlers.TwoFactorHandler
 }
 
 // ============================================================================
@@ -65,7 +68,7 @@ func InitDependencies() (*Dependencies, error) {
 		return nil, fmt.Errorf("config load error: %w", err)
 	}
 
-	// 2. Initialize Logger (Shared)
+	// 2. Initialize Logger
 	loggerCfg := logger.Config{
 		Environment:      cfg.App.Env,
 		ServiceName:      "authentication-service",
@@ -83,7 +86,7 @@ func InitDependencies() (*Dependencies, error) {
 	}
 	
 	log := logger.New(loggerCfg)
-	logger.Init(loggerCfg) // Initialize global logger
+	logger.Init(loggerCfg)
 	
 	log.Info("🚀 Initializing Authentication Service dependencies...")
 
@@ -94,7 +97,7 @@ func InitDependencies() (*Dependencies, error) {
 	}
 	log.Info("✅ Database connected")
 
-	// 4. Redis Connection (LOCAL)
+	// 4. Redis Connection
 	redisClient, err := redis.Connect(&cfg.Redis)
 	if err != nil {
 		return nil, fmt.Errorf("redis connection error: %w", err)
@@ -112,7 +115,7 @@ func InitDependencies() (*Dependencies, error) {
 	log.Info("✅ TOTP Manager initialized")
 
 	sessionManager := utils.NewManager(
-		redisClient.Client, // Use .Client to get underlying *redis.Client
+		redisClient.Client,
 		5,
 		7*24*time.Hour,
 	)
@@ -129,10 +132,10 @@ func InitDependencies() (*Dependencies, error) {
 	userRepo := repository.NewUserRepository(database)
 	organizationRepo := repository.NewOrganizationRepository(database)
 	planRepo := repository.NewSubscriptionPlanRepository(database)
-	tokenRepo := repository.NewTokenRepository(redisClient.Client) // Use .Client
+	tokenRepo := repository.NewTokenRepository(redisClient.Client)
 	log.Info("✅ Repositories initialized")
 
-	// 8. Initialize Services
+	// 9. Initialize Services
 	authService := services.NewAuthService(
 		userRepo,
 		organizationRepo,
@@ -141,14 +144,26 @@ func InitDependencies() (*Dependencies, error) {
 		sessionManager,
 		emailService,
 		jwtManager,
+		totpManager,
 		cfg,
 		log,
 	)
 	log.Info("✅ Services initialized")
 
-	// 9. Initialize Handlers
+	twoFactorService := services.NewTwoFactorService(
+		userRepo,
+		tokenRepo,
+		totpManager,
+		log,
+	)
+	log.Info("✅ 2FA Service initialized")
+
+	// 10. Initialize Handlers
 	authHandler := handlers.NewAuthHandler(authService, log)
+	twoFactorHandler := handlers.NewTwoFactorHandler(twoFactorService, log)
 	log.Info("✅ Handlers initialized")
+
+	log.Info("🎉 All dependencies initialized successfully")
 
 	return &Dependencies{
 		Config:           cfg,
@@ -164,7 +179,9 @@ func InitDependencies() (*Dependencies, error) {
 		SessionManager:   sessionManager,
 		EmailService:     emailService,
 		AuthService:      authService,
+		TwoFactorService: twoFactorService,
 		AuthHandler:      authHandler,
+		TwoFactorHandler: twoFactorHandler,
 	}, nil
 }
 
@@ -231,21 +248,83 @@ func main() {
 	})
 
 	// Global Middleware
-	
 	app.Use(deps.Logger.HTTPMiddleware())
 	app.Use(deps.Logger.RecoveryMiddleware())
-	
 	app.Use(cors.New(getCORSConfig(deps.Config)))
 
 	// Setup Routes
 	SetupRoutes(app, deps)
 
-	// Health Check
+	// Health Check Endpoint
 	app.Get("/health", func(c *fiber.Ctx) error {
+		// Quick DB ping
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		
+		dbHealthy := true
+		if err := deps.DB.Ping(ctx); err != nil {
+			dbHealthy = false
+		}
+		
 		return c.JSON(fiber.Map{
-			"status":  "ok",
-			"service": "authentication",
-			"version": "1.0.0",
+			"status":    "ok",
+			"service":   "authentication",
+			"version":   "1.0.0",
+			"timestamp": time.Now().Unix(),
+			"checks": fiber.Map{
+				"database": dbHealthy,
+			},
+		})
+	})
+
+	// Detailed Health Check
+	app.Get("/health/detailed", func(c *fiber.Ctx) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		
+		// Database check
+		dbHealthy := true
+		dbLatency := time.Duration(0)
+		start := time.Now()
+		if err := deps.DB.Ping(ctx); err != nil {
+			dbHealthy = false
+		} else {
+			dbLatency = time.Since(start)
+		}
+		
+		// Get pool stats
+		stats := deps.DB.Stats()
+		
+		// Plans check
+		plansHealthy := true
+		plansCount := 0
+		plans, err := deps.PlanRepo.ListAll(ctx)
+		if err != nil {
+			plansHealthy = false
+		} else {
+			plansCount = len(plans)
+		}
+		
+		return c.JSON(fiber.Map{
+			"status":    "ok",
+			"service":   "authentication",
+			"version":   "1.0.0",
+			"timestamp": time.Now().Unix(),
+			"checks": fiber.Map{
+				"database": fiber.Map{
+					"healthy":  dbHealthy,
+					"latency":  dbLatency.Milliseconds(),
+					"pool": fiber.Map{
+						"open":    stats.OpenConnections,
+						"in_use":  stats.InUse,
+						"idle":    stats.Idle,
+					},
+				},
+				"subscription_plans": fiber.Map{
+					"healthy": plansHealthy,
+					"count":   plansCount,
+				},
+			},
 		})
 	})
 
@@ -265,7 +344,11 @@ func main() {
 	<-quit
 
 	deps.Logger.Info("🛑 Shutting down server...")
-	if err := app.Shutdown(); err != nil {
+	
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	
+	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
 		deps.Logger.Error("Server forced to shutdown", err)
 	}
 
@@ -279,7 +362,6 @@ func main() {
 func getCORSConfig(cfg *config.Config) cors.Config {
 	origins := getAllowedOrigins(cfg.App.AllowedOrigins)
 	
-	// Development: specific localhost origins with credentials
 	if cfg.App.IsDevelopment() {
 		if len(cfg.App.AllowedOrigins) == 0 || cfg.App.AllowedOrigins[0] == "*" {
 			origins = "http://localhost:3000,http://localhost:4321,http://localhost:5173"
@@ -293,7 +375,6 @@ func getCORSConfig(cfg *config.Config) cors.Config {
 		}
 	}
 	
-	// Production: use env origins (must be specific)
 	return cors.Config{
 		AllowOrigins:     origins,
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
@@ -302,7 +383,6 @@ func getCORSConfig(cfg *config.Config) cors.Config {
 		MaxAge:           3600,
 	}
 }
-
 
 func parseLogLevel(level string) zerolog.Level {
 	switch level {
@@ -333,9 +413,9 @@ func getAllowedOrigins(origins []string) string {
 	var result strings.Builder
 	for i, origin := range origins {
 		if i > 0 {
-			result .WriteString(",")
+			result.WriteString(",")
 		}
-		result .WriteString(origin)
+		result.WriteString(origin)
 	}
 	return result.String()
 }

@@ -59,6 +59,7 @@ func (r *OrganizationRepository) Create(ctx context.Context, org *models.Organiz
 		return errors.Wrap(err, 500, "Failed to create organization")
 	}
 
+	logger.Debug("Organization created successfully", "org_id", org.ID, "name", org.Name)
 	return nil
 }
 
@@ -84,6 +85,7 @@ func (r *OrganizationRepository) CreateMembership(ctx context.Context, member *m
 		return errors.Wrap(err, 500, "Failed to create organization membership")
 	}
 
+	logger.Debug("Membership created successfully", "org_id", member.OrganizationID, "user_id", member.UserID, "role", member.Role)
 	return nil
 }
 
@@ -204,6 +206,11 @@ func (r *OrganizationRepository) ListByUser(ctx context.Context, userID uuid.UUI
 		orgs = append(orgs, org)
 	}
 
+	if err = rows.Err(); err != nil {
+		logger.Error("Error iterating organizations", err)
+		return nil, errors.Internal(err)
+	}
+
 	return orgs, nil
 }
 
@@ -298,6 +305,11 @@ func (r *OrganizationRepository) ListMembers(ctx context.Context, orgID uuid.UUI
 		members = append(members, member)
 	}
 
+	if err = rows.Err(); err != nil {
+		logger.Error("Error iterating members", err)
+		return nil, 0, errors.Internal(err)
+	}
+
 	return members, total, nil
 }
 
@@ -347,6 +359,7 @@ func (r *OrganizationRepository) Update(ctx context.Context, org *models.Organiz
 		return errors.NotFound("Organization not found")
 	}
 
+	logger.Debug("Organization updated successfully", "org_id", org.ID)
 	return nil
 }
 
@@ -389,6 +402,7 @@ func (r *OrganizationRepository) UpdateSubscription(ctx context.Context, org *mo
 		return errors.NotFound("Organization not found")
 	}
 
+	logger.Debug("Subscription updated successfully", "org_id", org.ID, "plan", org.PlanTier)
 	return nil
 }
 
@@ -405,7 +419,7 @@ func (r *OrganizationRepository) IncrementEventsUsed(ctx context.Context, orgID 
 	_, err := r.db.Exec(ctx, query, orgID, count, now)
 	
 	if err != nil {
-		logger.Error("Failed to increment events used", err, "org_id", orgID)
+		logger.Error("Failed to increment events used", err, "org_id", orgID, "count", count)
 		return errors.Internal(err)
 	}
 
@@ -429,6 +443,7 @@ func (r *OrganizationRepository) ResetMonthlyUsage(ctx context.Context, orgID uu
 		return errors.Internal(err)
 	}
 
+	logger.Debug("Monthly usage reset", "org_id", orgID)
 	return nil
 }
 
@@ -452,6 +467,7 @@ func (r *OrganizationRepository) UpdateMemberRole(ctx context.Context, orgID, us
 		return errors.NotFound("Member not found")
 	}
 
+	logger.Debug("Member role updated", "org_id", orgID, "user_id", userID, "new_role", role)
 	return nil
 }
 
@@ -463,7 +479,7 @@ func (r *OrganizationRepository) TransferOwnership(ctx context.Context, orgID, n
 		logger.Error("Failed to begin transaction", err)
 		return errors.Internal(err)
 	}
-	defer tx.Rollback() // pgx requires context in Rollback
+	defer tx.Rollback()
 
 	now := time.Now()
 
@@ -484,7 +500,7 @@ func (r *OrganizationRepository) TransferOwnership(ctx context.Context, orgID, n
 		return errors.Internal(err)
 	}
 
-	// Downgrade old owner to admin (optional but recommended)
+	// Downgrade old owner to admin
 	query3 := `
 		UPDATE organization_members 
 		SET role = $3, updated_at = $4 
@@ -500,6 +516,11 @@ func (r *OrganizationRepository) TransferOwnership(ctx context.Context, orgID, n
 		return errors.Internal(err)
 	}
 
+	logger.Info("Ownership transferred", 
+		"org_id", orgID, 
+		"old_owner", oldOwnerID, 
+		"new_owner", newOwnerID,
+	)
 	return nil
 }
 
@@ -527,6 +548,7 @@ func (r *OrganizationRepository) RemoveMember(ctx context.Context, orgID, userID
 		return errors.NotFound("Member not found")
 	}
 
+	logger.Debug("Member removed from organization", "org_id", orgID, "user_id", userID)
 	return nil
 }
 
@@ -555,5 +577,6 @@ func (r *OrganizationRepository) SoftDelete(ctx context.Context, orgID uuid.UUID
 		return errors.NotFound("Organization not found or already deleted")
 	}
 
+	logger.Info("Organization soft deleted", "org_id", orgID)
 	return nil
 }

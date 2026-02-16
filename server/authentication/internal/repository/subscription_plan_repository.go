@@ -10,10 +10,6 @@ import (
 	"shared/models"
 )
 
-// ============================================================================
-// Subscription Plan Repository
-// ============================================================================
-
 type SubscriptionPlanRepository struct {
 	db *db.DB
 }
@@ -23,7 +19,7 @@ func NewSubscriptionPlanRepository(database *db.DB) *SubscriptionPlanRepository 
 }
 
 // ============================================================================
-// READ
+// READ OPERATIONS
 // ============================================================================
 
 // GetByTierAndBilling retrieves a plan by tier and billing period
@@ -32,6 +28,12 @@ func (r *SubscriptionPlanRepository) GetByTierAndBilling(
 	tier models.PlanTier,
 	billingPeriod models.BillingPeriod,
 ) (*models.SubscriptionPlan, error) {
+	// Log the request
+	logger.Debug("Fetching subscription plan",
+		"tier", tier,
+		"billing", billingPeriod,
+	)
+
 	plan := &models.SubscriptionPlan{}
 	query := `
 		SELECT 
@@ -47,6 +49,7 @@ func (r *SubscriptionPlanRepository) GetByTierAndBilling(
 		WHERE tier = $1 AND billing_period = $2 AND is_active = TRUE
 		LIMIT 1`
 
+	// DB wrapper handles timeout internally
 	err := r.db.QueryRow(ctx, query, tier, billingPeriod).Scan(
 		&plan.ID, &plan.Tier, &plan.Name, &plan.Description, &plan.BillingPeriod,
 		&plan.Price, &plan.PricePerMonth, &plan.Currency,
@@ -59,18 +62,34 @@ func (r *SubscriptionPlanRepository) GetByTierAndBilling(
 	)
 
 	if err == sql.ErrNoRows {
+		logger.Warn("Subscription plan not found",
+			"tier", tier,
+			"billing", billingPeriod,
+		)
 		return nil, errors.NotFound("Subscription plan not found")
 	}
+	
 	if err != nil {
-		logger.Error("Failed to get subscription plan", err, "tier", tier, "billing", billingPeriod)
+		logger.Error("Failed to get subscription plan", err,
+			"tier", tier,
+			"billing", billingPeriod,
+		)
 		return nil, errors.Internal(err)
 	}
+
+	logger.Debug("Successfully fetched subscription plan",
+		"plan_id", plan.ID,
+		"plan_name", plan.Name,
+	)
 
 	return plan, nil
 }
 
 // GetByVariantID retrieves a plan by LemonSqueezy variant ID
-func (r *SubscriptionPlanRepository) GetByVariantID(ctx context.Context, variantID string) (*models.SubscriptionPlan, error) {
+func (r *SubscriptionPlanRepository) GetByVariantID(
+	ctx context.Context, 
+	variantID string,
+) (*models.SubscriptionPlan, error) {
 	plan := &models.SubscriptionPlan{}
 	query := `
 		SELECT 
@@ -150,11 +169,19 @@ func (r *SubscriptionPlanRepository) ListAll(ctx context.Context) ([]*models.Sub
 		plans = append(plans, plan)
 	}
 
+	if err = rows.Err(); err != nil {
+		logger.Error("Error iterating subscription plans", err)
+		return nil, errors.Internal(err)
+	}
+
 	return plans, nil
 }
 
 // ListByTier retrieves all plans for a specific tier (monthly + annual)
-func (r *SubscriptionPlanRepository) ListByTier(ctx context.Context, tier models.PlanTier) ([]*models.SubscriptionPlan, error) {
+func (r *SubscriptionPlanRepository) ListByTier(
+	ctx context.Context, 
+	tier models.PlanTier,
+) ([]*models.SubscriptionPlan, error) {
 	query := `
 		SELECT 
 			id, tier, name, description, billing_period,
@@ -193,6 +220,11 @@ func (r *SubscriptionPlanRepository) ListByTier(ctx context.Context, tier models
 			return nil, errors.Internal(err)
 		}
 		plans = append(plans, plan)
+	}
+
+	if err = rows.Err(); err != nil {
+		logger.Error("Error iterating subscription plans", err)
+		return nil, errors.Internal(err)
 	}
 
 	return plans, nil
