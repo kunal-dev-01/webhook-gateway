@@ -23,7 +23,7 @@ import (
 	"shared/auth"
 	"shared/config"
 	sharedErrors "shared/errors"
-	sharedLogger "shared/logger" // Renamed to avoid collision
+	"shared/logger"
 )
 
 // ============================================================================
@@ -34,7 +34,7 @@ type Dependencies struct {
 	Config *config.Config
 	DB     *db.DB
 	Redis  *redis.Client
-	Logger *sharedLogger.Logger
+	Logger *logger.Logger
 
 	// Repositories
 	UserRepo         *repository.UserRepository
@@ -48,12 +48,12 @@ type Dependencies struct {
 	SessionManager *utils.Manager
 
 	// Services
-	AuthService      *services.AuthService
-	TwoFactorService *services.TwoFactorService
-	EmailService     *utils.EmailService
+	AuthService  *services.AuthService
+	TwoFactorService  *services.TwoFactorService
+	EmailService *utils.EmailService
 
 	// Handlers
-	AuthHandler      *handlers.AuthHandler
+	AuthHandler *handlers.AuthHandler
 	TwoFactorHandler *handlers.TwoFactorHandler
 }
 
@@ -69,7 +69,7 @@ func InitDependencies() (*Dependencies, error) {
 	}
 
 	// 2. Initialize Logger
-	loggerCfg := sharedLogger.Config{
+	loggerCfg := logger.Config{
 		Environment:      cfg.App.Env,
 		ServiceName:      "authentication-service",
 		Level:            parseLogLevel(cfg.Logger.Level),
@@ -84,10 +84,10 @@ func InitDependencies() (*Dependencies, error) {
 		EnableStackTrace: cfg.Logger.EnableStackTrace,
 		LogQueryParams:   false,
 	}
-
-	log := sharedLogger.New(loggerCfg)
-	sharedLogger.Init(loggerCfg)
-
+	
+	log := logger.New(loggerCfg)
+	logger.Init(loggerCfg)
+	
 	log.Info("🚀 Initializing Authentication Service dependencies...")
 
 	// 3. Database Connection
@@ -135,7 +135,7 @@ func InitDependencies() (*Dependencies, error) {
 	tokenRepo := repository.NewTokenRepository(redisClient.Client)
 	log.Info("✅ Repositories initialized")
 
-	// 8. Initialize Services
+	// 9. Initialize Services
 	authService := services.NewAuthService(
 		userRepo,
 		organizationRepo,
@@ -148,7 +148,7 @@ func InitDependencies() (*Dependencies, error) {
 		cfg,
 		log,
 	)
-	log.Info("✅ Auth Service initialized")
+	log.Info("✅ Services initialized")
 
 	twoFactorService := services.NewTwoFactorService(
 		userRepo,
@@ -158,7 +158,7 @@ func InitDependencies() (*Dependencies, error) {
 	)
 	log.Info("✅ 2FA Service initialized")
 
-	// 9. Initialize Handlers
+	// 10. Initialize Handlers
 	authHandler := handlers.NewAuthHandler(authService, log)
 	twoFactorHandler := handlers.NewTwoFactorHandler(twoFactorService, log)
 	log.Info("✅ Handlers initialized")
@@ -208,9 +208,11 @@ func (d *Dependencies) Cleanup() error {
 		}
 	}
 
-	// Logger close logic removed as zerolog doesn't need explicit close usually, 
-	// unless using a buffered writer that needs flush. 
-	// Assuming sharedLogger handles this internally if needed.
+	if d.Logger != nil {
+		if err := d.Logger.Close(); err != nil {
+			lastErr = err
+		}
+	}
 
 	return lastErr
 }
@@ -227,6 +229,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Cleanup on exit
+	defer func() {
+		if err := deps.Cleanup(); err != nil {
+			deps.Logger.Error("Cleanup finished with errors", err)
+		}
+	}()
+
 	// Create Fiber App
 	app := fiber.New(fiber.Config{
 		AppName:               "Upnixo Authentication Service",
@@ -239,29 +248,24 @@ func main() {
 	})
 
 	// Global Middleware
-	// Note: Ensure Logger.HTTPMiddleware() is compatible with Fiber v2
-	// If it's a custom middleware in shared/logger, use it.
-	// app.Use(deps.Logger.HTTPMiddleware()) 
-	
+	app.Use(deps.Logger.HTTPMiddleware())
 	app.Use(deps.Logger.RecoveryMiddleware())
 	app.Use(cors.New(getCORSConfig(deps.Config)))
 
-	// Setup Routes (Assuming this function exists in another file in main package)
-	// SetupRoutes(app, deps) 
+	// Setup Routes
+	SetupRoutes(app, deps)
 
-	// ───────────────── Health Check Endpoint ─────────────────
+	// Health Check Endpoint
 	app.Get("/health", func(c *fiber.Ctx) error {
-		// Use PingContext for timeout safety
-		ctx, cancel := context.WithTimeout(c.Context(), 2*time.Second)
+		// Quick DB ping
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-
+		
 		dbHealthy := true
-		// FIX: Use PingContext instead of Ping(ctx)
 		if err := deps.DB.PingContext(ctx); err != nil {
 			dbHealthy = false
-			deps.Logger.Error("Health check DB ping failed", err)
 		}
-
+		
 		return c.JSON(fiber.Map{
 			"status":    "ok",
 			"service":   "authentication",
@@ -273,38 +277,34 @@ func main() {
 		})
 	})
 
-	// ───────────────── Detailed Health Check ─────────────────
+	// Detailed Health Check
 	app.Get("/health/detailed", func(c *fiber.Ctx) error {
-		ctx, cancel := context.WithTimeout(c.Context(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-
+		
 		// Database check
 		dbHealthy := true
 		dbLatency := time.Duration(0)
 		start := time.Now()
-		
-		// FIX: Use PingContext here too
 		if err := deps.DB.PingContext(ctx); err != nil {
 			dbHealthy = false
-			deps.Logger.Error("Detailed health check DB ping failed", err)
 		} else {
 			dbLatency = time.Since(start)
 		}
-
+		
 		// Get pool stats
 		stats := deps.DB.Stats()
-
+		
 		// Plans check
 		plansHealthy := true
 		plansCount := 0
-		// Assuming ListAll takes context
-		if plans, err := deps.PlanRepo.ListAll(ctx); err != nil {
+		plans, err := deps.PlanRepo.ListAll(ctx)
+		if err != nil {
 			plansHealthy = false
-			// Don't log full error for plans check unless critical
 		} else {
 			plansCount = len(plans)
 		}
-
+		
 		return c.JSON(fiber.Map{
 			"status":    "ok",
 			"service":   "authentication",
@@ -312,12 +312,12 @@ func main() {
 			"timestamp": time.Now().Unix(),
 			"checks": fiber.Map{
 				"database": fiber.Map{
-					"healthy": dbHealthy,
-					"latency_ms": dbLatency.Milliseconds(),
+					"healthy":  dbHealthy,
+					"latency":  dbLatency.Milliseconds(),
 					"pool": fiber.Map{
-						"open":   stats.OpenConnections,
-						"in_use": stats.InUse,
-						"idle":   stats.Idle,
+						"open":    stats.OpenConnections,
+						"in_use":  stats.InUse,
+						"idle":    stats.Idle,
 					},
 				},
 				"subscription_plans": fiber.Map{
@@ -332,30 +332,24 @@ func main() {
 	port := deps.Config.App.Port
 	deps.Logger.Info("🚀 Starting server...", "port", port, "env", deps.Config.App.Env)
 
-	// Graceful Shutdown Channel
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
-
 	go func() {
 		if err := app.Listen(":" + port); err != nil {
 			deps.Logger.Fatal("Server startup failed", err)
 		}
 	}()
 
+	// Graceful Shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 	<-quit
+
 	deps.Logger.Info("🛑 Shutting down server...")
-
-	// Shutdown context
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
+	
 	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
 		deps.Logger.Error("Server forced to shutdown", err)
-	}
-
-	// Cleanup dependencies
-	if err := deps.Cleanup(); err != nil {
-		deps.Logger.Error("Cleanup finished with errors", err)
 	}
 
 	deps.Logger.Info("✅ Server stopped gracefully")
@@ -367,25 +361,31 @@ func main() {
 
 func getCORSConfig(cfg *config.Config) cors.Config {
 	origins := getAllowedOrigins(cfg.App.AllowedOrigins)
-
+	
 	if cfg.App.IsDevelopment() {
 		if len(cfg.App.AllowedOrigins) == 0 || cfg.App.AllowedOrigins[0] == "*" {
-			// Added common local dev ports
-			origins = "http://localhost:3000,http://localhost:4321,http://localhost:5173,http://127.0.0.1:3000"
+			origins = "http://localhost:3000,http://localhost:4321,http://localhost:5173"
+		}
+		return cors.Config{
+			AllowOrigins:     origins,
+			AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
+			AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
+			AllowCredentials: true,
+			MaxAge:           3600,
 		}
 	}
-
+	
 	return cors.Config{
 		AllowOrigins:     origins,
-		AllowMethods:     "GET,POST,PUT,DELETE,PATCH,OPTIONS", // Added PATCH
-		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Requested-With",
+		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
+		AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
 		AllowCredentials: true,
 		MaxAge:           3600,
 	}
 }
 
 func parseLogLevel(level string) zerolog.Level {
-	switch strings.ToLower(level) {
+	switch level {
 	case "trace":
 		return zerolog.TraceLevel
 	case "debug":
@@ -409,5 +409,13 @@ func getAllowedOrigins(origins []string) string {
 	if len(origins) == 0 {
 		return "*"
 	}
-	return strings.Join(origins, ",")
+	
+	var result strings.Builder
+	for i, origin := range origins {
+		if i > 0 {
+			result.WriteString(",")
+		}
+		result.WriteString(origin)
+	}
+	return result.String()
 }

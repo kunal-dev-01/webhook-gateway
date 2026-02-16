@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 
 	"authentication/internal/db"
 	"shared/errors"
@@ -198,7 +199,7 @@ func (r *UserRepository) Enable2FA(ctx context.Context, userID uuid.UUID, secret
 			two_factor_confirmed_at = $4, updated_at = $5
 		WHERE id = $1 AND deleted_at IS NULL`
 
-	return r.performUpdate(query, "enable 2FA", userID, userID, secret, backupCodes, now, now)
+	return r.performUpdate(query, "enable 2FA", userID, userID, secret, pq.Array(backupCodes), now, now)
 }
 
 func (r *UserRepository) Disable2FA(ctx context.Context, userID uuid.UUID) error {

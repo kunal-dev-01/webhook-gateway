@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/base64" // <--- Import Add kiya
 	"fmt"
 
 	"github.com/google/uuid"
@@ -48,7 +49,6 @@ func (s *TwoFactorService) Enable2FA(ctx context.Context, userID uuid.UUID) (*dt
 		return nil, err
 	}
 
-	// Check if 2FA is already enabled
 	if user.TwoFactorEnabled {
 		return nil, errors.BadRequest("Two-factor authentication is already enabled")
 	}
@@ -60,27 +60,28 @@ func (s *TwoFactorService) Enable2FA(ctx context.Context, userID uuid.UUID) (*dt
 		return nil, err
 	}
 
-	// Store encrypted secret in Redis temporarily (valid for 10 minutes)
+	// Store encrypted secret in Redis (10 mins)
 	if err := s.tokenRepo.Store2FASetupSecret(ctx, userID, encryptedSecret, 10*60); err != nil {
 		s.log.Error("Failed to store 2FA setup secret", err, "user_id", userID)
 		return nil, err
 	}
 
-	// Generate QR code
-	qrCode, err := qrcode.Encode(provisioningURI, qrcode.Medium, 256)
+	// Generate QR code (Returns []byte)
+	qrCodeBytes, err := qrcode.Encode(provisioningURI, qrcode.Medium, 256)
 	if err != nil {
 		s.log.Error("Failed to generate QR code", err, "user_id", userID)
 		return nil, errors.Internal(err)
 	}
 
-	// Convert to base64 for frontend
-	qrCodeDataURL := fmt.Sprintf("data:image/png;base64,%s", qrCode)
+	// FIX: Encode Bytes to Base64 String
+	qrBase64 := base64.StdEncoding.EncodeToString(qrCodeBytes)
+	qrCodeDataURL := fmt.Sprintf("data:image/png;base64,%s", qrBase64)
 
-	s.log.Info("2FA setup initiated", "user_id", userID, "email", user.Email)
+	s.log.Info("2FA setup initiated", "user_id", userID)
 
 	return &dto.Enable2FAResponse{
 		QRCodeURL: qrCodeDataURL,
-		Secret:    rawSecret, // For manual entry
+		Secret:    rawSecret,
 	}, nil
 }
 
