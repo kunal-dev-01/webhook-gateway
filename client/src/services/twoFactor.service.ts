@@ -1,6 +1,5 @@
 import { axiosClient } from "@/libs/axios";
 import type {
-  TwoFactorStatusResponse,
   Enable2FAResponse,
   Confirm2FARequest,
   Confirm2FAResponse,
@@ -16,14 +15,6 @@ function unwrapResponse<T>(response: { data: { success: boolean; data: T } }): T
 }
 
 export const twoFactorService = {
-  // ============================================================================
-  // GET 2FA STATUS
-  // ============================================================================
-  getStatus: async (): Promise<TwoFactorStatusResponse> => {
-    const response = await axiosClient.get("/user/2fa/status");
-    return unwrapResponse<TwoFactorStatusResponse>(response);
-  },
-
   // ============================================================================
   // ENABLE 2FA (Step 1: Get QR Code)
   // ============================================================================

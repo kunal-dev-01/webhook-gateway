@@ -10,7 +10,7 @@ import SubmitButton from "@/common/SubmitButton";
 import { TriangleAlert, X } from "@/svg/Common";
 import { BadgeCheck, Logout, Pen } from "@/svg/Auth";
 import { Loader } from "@/common/Loader";
-import { profileSchema, type ProfileFormData } from "@/schemas/user.schema";
+import { profileSchema, type ProfileFormData } from "@/schemas/2fa.schema";
 
 
 export const ProfileSidePanel = () => {

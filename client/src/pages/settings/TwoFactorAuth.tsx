@@ -6,7 +6,12 @@ import { toast } from "sonner";
 
 // Store & Hooks
 import { useAuthStore } from "@/store/auth.store";
-import { useSetup2FA, useEnable2FA, useDisable2FA } from "@/hooks/useAuth";
+import { 
+  useEnable2FA, 
+  useConfirm2FA, 
+  useDisable2FA, 
+  useRegenerateBackupCodes 
+} from "@/hooks/use2FA";
 
 // Components
 import AuthInput from "@/common/AuthInput";
@@ -14,16 +19,18 @@ import SubmitButton from "@/common/SubmitButton";
 
 // Types
 import { 
-  type Setup2FAResponse, 
-  type Enable2FAResponse 
-} from "@/types/auth.types";
+  type Enable2FAResponse,
+  type Confirm2FAResponse,
+} from "@/types/twoFactor.types";
 
 import {
   disable2FASchema,
   verify2FASchema,
+  regenerateBackupCodesSchema,
   type Disable2FAForm,
   type Verify2FAForm,
-} from "@/schemas/user.schema";
+  type RegenerateBackupCodesForm,
+} from "@/schemas/2fa.schema";
 
 // Icons (Adjust paths if needed)
 import { Copy, Shield, TriangleAlert } from "@/svg/Common"; 
@@ -35,15 +42,16 @@ export const TwoFactorAuth = () => {
   const { user, setUser } = useAuthStore();
 
   // Hooks
-  const setupMutation = useSetup2FA();
   const enableMutation = useEnable2FA();
+  const confirmMutation = useConfirm2FA();
   const disableMutation = useDisable2FA();
+  const regenerateMutation = useRegenerateBackupCodes();
 
   // Local State
-  const [step, setStep] = useState<"idle" | "setup" | "backup_codes" | "disable">("idle");
+  const [step, setStep] = useState<"idle" | "setup" | "backup_codes" | "disable" | "regenerate">("idle");
   
   // Data States
-  const [setupData, setSetupData] = useState<Setup2FAResponse | null>(null);
+  const [setupData, setSetupData] = useState<Enable2FAResponse | null>(null);
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
 
   // Forms
@@ -57,12 +65,17 @@ export const TwoFactorAuth = () => {
     defaultValues: { password: "" },
   });
 
+  const regenerateForm = useForm<RegenerateBackupCodesForm>({
+    resolver: zodResolver(regenerateBackupCodesSchema),
+    defaultValues: { password: "" },
+  });
+
   // ─────────────────────────── Handlers ─────────────────────────────
 
   // 1. Start Setup (Get Secret & QR)
   const handleStartSetup = () => {
-    setupMutation.setup2FA(undefined, {
-      onSuccess: (data: Setup2FAResponse) => {
+    enableMutation.enable2FA(undefined, {
+      onSuccess: (data: Enable2FAResponse) => {
         setSetupData(data);
         setStep("setup");
         toast.dismiss();
@@ -74,15 +87,12 @@ export const TwoFactorAuth = () => {
     });
   };
 
-  // 2. Verify Code & Enable (Get Recovery Codes)
+  // 2. Verify Code & Confirm 2FA (Get Recovery Codes)
   const onVerifySubmit = (data: Verify2FAForm) => {
-    enableMutation.enable2FA(
+    confirmMutation.confirm2FA(
       { code: data.code },
       {
-        onSuccess: (response: any) => { 
-          // Check if response has data property or is direct response
-          const result = (response.data || response) as Enable2FAResponse; 
-
+        onSuccess: (response: Confirm2FAResponse) => {
           // Update Global Store
           if (user) {
             setUser({ ...user, two_factor_enabled: true });
@@ -90,9 +100,9 @@ export const TwoFactorAuth = () => {
 
           toast.success("2FA Enabled Successfully!");
 
-          // Get codes from response
-          if (result.recovery_codes && result.recovery_codes.length > 0) {
-            setRecoveryCodes(result.recovery_codes);
+          // Get backup codes from response
+          if (response.backup_codes && response.backup_codes.length > 0) {
+            setRecoveryCodes(response.backup_codes);
             setStep("backup_codes");
           } else {
             setStep("idle");
@@ -125,6 +135,27 @@ export const TwoFactorAuth = () => {
         },
         onError: (error: any) => {
           const msg = error?.response?.data?.error || "Incorrect password.";
+          toast.error(msg);
+        },
+      }
+    );
+  };
+
+  // 4. Regenerate Backup Codes
+  const onRegenerateSubmit = (data: RegenerateBackupCodesForm) => {
+    regenerateMutation.regenerateBackupCodes(
+      { password: data.password },
+      {
+        onSuccess: (response: any) => {
+          if (response.backup_codes && response.backup_codes.length > 0) {
+            setRecoveryCodes(response.backup_codes);
+            setStep("backup_codes");
+            regenerateForm.reset();
+            toast.success("Backup codes regenerated successfully!");
+          }
+        },
+        onError: (error: any) => {
+          const msg = error?.response?.data?.error || "Failed to regenerate backup codes.";
           toast.error(msg);
         },
       }
@@ -174,8 +205,8 @@ export const TwoFactorAuth = () => {
 
             {/* IF NOT ENABLED: Show Main Action Button */}
             {!is2FAEnabled && step === "idle" && (
-                <SubmitButton onClick={handleStartSetup} loading={setupMutation.isPending} className="w-full md:w-auto px-6">
-                {setupMutation.isPending ? "Starting..." : "Enable 2FA"}
+                <SubmitButton onClick={handleStartSetup} loading={enableMutation.isPending} className="w-full md:w-auto px-6">
+                {enableMutation.isPending ? "Starting..." : "Enable 2FA"}
                 </SubmitButton>
             )}
         </div>
@@ -184,10 +215,10 @@ export const TwoFactorAuth = () => {
         {is2FAEnabled && step === "idle" && (
             <div className="flex flex-wrap gap-3 mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-700">
                 <button
-                    onClick={handleStartSetup}
+                    onClick={() => setStep("regenerate")}
                     className="px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
                 >
-                    Regenerate Keys
+                    Regenerate Backup Codes
                 </button>
                 <button
                     onClick={() => setStep("disable")}
@@ -229,11 +260,11 @@ export const TwoFactorAuth = () => {
                   placeholder="000 000"
                   register={verifyForm.register}
                   error={verifyForm.formState.errors.code?.message}
-                  disabled={enableMutation.isPending}
+                  disabled={confirmMutation.isPending}
                 />
                 <div className="flex gap-3">
-                  <SubmitButton loading={enableMutation.isPending} className="w-full">
-                    {enableMutation.isPending ? "Verifying..." : "Verify & Enable"}
+                  <SubmitButton loading={confirmMutation.isPending} className="w-full">
+                    {confirmMutation.isPending ? "Verifying..." : "Verify & Enable"}
                   </SubmitButton>
                   <button
                     type="button"
@@ -287,6 +318,54 @@ export const TwoFactorAuth = () => {
               I have saved these codes
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────── REGENERATE BACKUP CODES ─────────────────────────── */}
+      {step === "regenerate" && (
+        <div className="animate-in fade-in slide-in-from-top-2 duration-300 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/30 rounded-2xl p-6">
+          <form onSubmit={regenerateForm.handleSubmit(onRegenerateSubmit)} className="space-y-4">
+            <div>
+                <h3 className="font-semibold text-amber-900 dark:text-amber-200 flex items-center gap-2 text-lg">
+                    Regenerate Backup Codes
+                </h3>
+                <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                    Enter your password to generate new backup codes. Your old codes will be invalidated.
+                </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-end">
+                <div className="flex-1 w-full">
+                <AuthInput
+                    label="Current Password"
+                    type="password"
+                    name="password"
+                    placeholder="••••••••"
+                    register={regenerateForm.register}
+                    error={regenerateForm.formState.errors.password?.message}
+                    disabled={regenerateMutation.isPending}
+                />
+                </div>
+                <div className="flex gap-3 w-full sm:w-auto">
+                    <SubmitButton 
+                        loading={regenerateMutation.isPending} 
+                        className="px-6"
+                    >
+                        {regenerateMutation.isPending ? "Generating..." : "Generate New Codes"}
+                    </SubmitButton>
+                    <button
+                        type="button"
+                        onClick={() => {
+                        setStep("idle");
+                        regenerateForm.reset();
+                        }}
+                        className="px-4 py-2.5 bg-white dark:bg-zinc-800 border border-amber-200 dark:border-amber-900/30 text-amber-700 dark:text-amber-400 font-medium rounded-xl dark:hover:bg-zinc-700 hover:bg-amber-50 transition-colors"
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+          </form>
         </div>
       )}
 

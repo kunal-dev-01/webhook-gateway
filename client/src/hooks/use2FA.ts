@@ -1,39 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { twoFactorService } from "@/services/twoFactor.service";
-import { useAuthStore } from "@/store/auth.store";
 import type {
   Confirm2FARequest,
   Disable2FARequest,
   RegenerateBackupCodesRequest,
 } from "@/types/twoFactor.types";
 import { ApiError } from "@/types/api.types";
-
-// ============================================================================
-// GET 2FA STATUS
-// ============================================================================
-
-export const use2FAStatus = () => {
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-
-  const query = useQuery({
-    queryKey: ["2fa", "status"],
-    queryFn: twoFactorService.getStatus,
-    enabled: isAuthenticated,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    retry: 1,
-  });
-
-  return {
-    status: query.data,
-    isPending: query.isPending,
-    isSuccess: query.isSuccess,
-    isError: query.isError,
-    error: query.error as ApiError | null,
-    refetch: query.refetch,
-  };
-};
 
 // ============================================================================
 // ENABLE 2FA (Step 1: Get QR Code)
