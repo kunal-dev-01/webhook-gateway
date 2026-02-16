@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"fmt"
 	"os"
 	"os/signal"
@@ -329,12 +330,12 @@ func getAllowedOrigins(origins []string) string {
 		return "*"
 	}
 	
-	result := ""
+	var result strings.Builder
 	for i, origin := range origins {
 		if i > 0 {
-			result += ","
+			result .WriteString(",")
 		}
-		result += origin
+		result .WriteString(origin)
 	}
-	return result
+	return result.String()
 }
