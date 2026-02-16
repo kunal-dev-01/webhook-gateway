@@ -1,4 +1,4 @@
-import { ProfileSidePanel } from "./ProfileSidePanel";
+import ProfileSidePanel from "./ProfileSidePanel";
 import { SecuritySection } from "./SecuritySection";
 
 const Settings = () => {

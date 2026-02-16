@@ -79,7 +79,7 @@ const DashboardLayout: FC = () => {
             pointer-events-auto
             flex items-center justify-between sm:justify-center 
             gap-2 sm:gap-8 
-            px-4 py-2.5 
+            px-3 py-2 
             w-full sm:w-max
             rounded-full
             backdrop-blur-md 
