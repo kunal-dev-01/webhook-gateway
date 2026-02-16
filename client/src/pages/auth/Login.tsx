@@ -10,7 +10,13 @@ import SubmitButton from '@/common/SubmitButton';
 import { Lock, User } from '@/svg/Auth';
 import { ChevronDown } from '@/svg/Common';
 import type { LoginRequest, Verify2FARequest } from '@/types/auth.types';
-import { loginSchema, twoFactorSchema, type LoginFormData, type TwoFactorFormData } from '@/schemas/auth.schema';
+import { ApiError } from '@/types/api.types';
+import { 
+  loginSchema, 
+  twoFactorSchema, 
+  type LoginFormData, 
+  type TwoFactorFormData 
+} from '@/schemas/auth.schema';
 import { Link } from 'react-router-dom';
 
 // ============================================================================
@@ -52,14 +58,14 @@ const Login = () => {
       const data = loginMutation.data;
 
       // Case 1: 2FA Required
-      if (data.require_2fa && data.temp_token) {
+      if (data.two_factor_required && data.temp_token) {
         setTempToken(data.temp_token);
         setShowOTPForm(true);
-        toast.success('Please enter your 2FA code to continue'); // Sonner Success
+        toast.success('Please enter your 2FA code to continue');
       } 
       // Case 2: Direct Login Success (No 2FA)
       else if (data.access_token && data.user) {
-        toast.success('Login successful! Redirecting...'); // Sonner Success
+        toast.success('Login successful! Redirecting...');
         setTimeout(() => {
           window.location.href = '/dashboard';
         }, 500);
@@ -72,7 +78,7 @@ const Login = () => {
   // ============================================================================
   useEffect(() => {
     if (verify2FAMutation.isSuccess && verify2FAMutation.data) {
-      toast.success('2FA verified! Redirecting...'); // Sonner Success
+      toast.success('2FA verified! Redirecting...');
       setTimeout(() => {
         window.location.href = '/dashboard';
       }, 500);
@@ -80,28 +86,58 @@ const Login = () => {
   }, [verify2FAMutation.isSuccess, verify2FAMutation.data]);
 
   // ============================================================================
-  // Effect: Handle Login Errors
+  // Effect: Handle Login Errors - FIXED ✅
   // ============================================================================
   useEffect(() => {
     if (loginMutation.isError && loginMutation.error) {
-      const errorMessage = 
-        (loginMutation.error as any)?.response?.data?.error || 
-        'Login failed. Please check your credentials.';
-      toast.error(errorMessage); // Sonner Error
+      const error = loginMutation.error as ApiError;
+      
+      // Check if validation error with field-specific errors
+      if (error.isValidationError()) {
+        // Show field-specific errors
+        const emailError = error.getFieldError('email');
+        const passwordError = error.getFieldError('password');
+        
+        if (emailError) {
+          loginForm.setError('email', { message: emailError });
+        }
+        if (passwordError) {
+          loginForm.setError('password', { message: passwordError });
+        }
+        
+        // Show general error toast
+        toast.error(error.message || 'Validation failed');
+      } else {
+        // Show general error
+        toast.error(error.message || 'Login failed. Please check your credentials.');
+      }
     }
-  }, [loginMutation.isError, loginMutation.error]);
+  }, [loginMutation.isError, loginMutation.error, loginForm]);
 
   // ============================================================================
-  // Effect: Handle 2FA Verification Errors
+  // Effect: Handle 2FA Verification Errors - FIXED ✅
   // ============================================================================
   useEffect(() => {
     if (verify2FAMutation.isError && verify2FAMutation.error) {
-      const errorMessage = 
-        (verify2FAMutation.error as any)?.response?.data?.error || 
-        'Invalid code. Please try again.';
-      toast.error(errorMessage); // Sonner Error
+      const error = verify2FAMutation.error as ApiError;
+      
+      // Check if validation error
+      if (error.isValidationError()) {
+        const codeError = error.getFieldError('code');
+        if (codeError) {
+          otpForm.setError('code', { message: codeError });
+        }
+        toast.error(error.message || 'Invalid code format');
+      } else {
+        // Show specific error message
+        const message = error.isStatus(401)
+          ? 'Invalid or expired code. Please try again.'
+          : error.message || 'Verification failed. Please try again.';
+        
+        toast.error(message);
+      }
     }
-  }, [verify2FAMutation.isError, verify2FAMutation.error]);
+  }, [verify2FAMutation.isError, verify2FAMutation.error, otpForm]);
 
   // ============================================================================
   // Handlers
@@ -114,14 +150,15 @@ const Login = () => {
 
   const onOTPSubmit = (data: TwoFactorFormData) => {
     if (!tempToken) {
-      toast.error('Session expired. Please login again.'); // Sonner Error
+      toast.error('Session expired. Please login again.');
       handleBackToLogin();
       return;
     }
 
     const request: Verify2FARequest = {
       temp_token: tempToken,
-      code: data.code.replace(/\s/g, '').toUpperCase(), 
+      code: data.code.replace(/\s/g, '').toUpperCase(),
+      is_recovery: useRecoveryCode, // ✅ Added is_recovery field
     };
 
     verify2FAMutation.verify2FA(request);
@@ -136,8 +173,6 @@ const Login = () => {
     loginMutation.reset();
     verify2FAMutation.reset();
   };
-
-  // Removed handleToastClose as Sonner handles it automatically
 
   const toggleRecoveryCode = () => {
     setUseRecoveryCode(!useRecoveryCode);

@@ -1,21 +1,7 @@
-import { useAuthStore } from "@/store/auth.store"
-import { useMe } from "@/hooks/use2FA";
-import PageLoader from "@/common/PageLoader";
 import { ProfileSidePanel } from "./ProfileSidePanel";
 import { SecuritySection } from "./SecuritySection";
 
 const Settings = () => {
-
-  const { user } = useAuthStore((state) => state);
-  const { isPending } = useMe();
-
-  if (isPending) {
-    return <PageLoader />
-  }
-
-  if (!user) {
-    return null;
-  }
 
   return (
     <div className="mx-auto w-full max-w-7xl py-8 md:py-12">
