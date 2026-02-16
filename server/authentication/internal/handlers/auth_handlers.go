@@ -3,11 +3,12 @@ package handlers
 import (
 	"authentication/internal/dto"
 	"authentication/internal/services"
-	"shared/logger"
-	"shared/errors"
-	"shared/middleware"
 
 	"github.com/gofiber/fiber/v2"
+
+	"shared/errors"
+	"shared/logger"
+	"shared/middleware"
 )
 
 type AuthHandler struct {
@@ -26,28 +27,15 @@ func NewAuthHandler(authService *services.AuthService, log *logger.Logger) *Auth
 // REGISTER
 // ============================================================================
 
-// Register godoc
-// @Summary Register a new user
-// @Tags Auth
-// @Accept json
-// @Produce json
-// @Param request body dto.RegisterRequest true "Registration details"
-// @Success 201 {object} dto.RegisterResponse
-// @Failure 400 {object} map[string]interface{}
-// @Failure 409 {object} map[string]interface{}
-// @Router /auth/register [post]
 func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	var req dto.RegisterRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"success": false,
-			"error":   "Invalid request body",
-		})
+		return errors.BadRequest("Invalid request body")
 	}
 
 	resp, err := h.authService.Register(c.Context(), &req)
 	if err != nil {
-		return handleError(c, err)
+		return err
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
@@ -57,30 +45,89 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 }
 
 // ============================================================================
+// LOGIN
+// ============================================================================
+
+func (h *AuthHandler) Login(c *fiber.Ctx) error {
+	var req dto.LoginRequest
+	if err := c.BodyParser(&req); err != nil {
+		return errors.BadRequest("Invalid request body")
+	}
+
+	resp, err := h.authService.Login(c.Context(), &req)
+	if err != nil {
+		return err
+	}
+
+	if resp.TwoFactorRequired {
+		return c.JSON(fiber.Map{
+			"success": true,
+			"data":    resp,
+		})
+	}
+
+	setRefreshTokenCookie(c, resp.RefreshToken)
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data":    resp,
+	})
+}
+
+func (h *AuthHandler) Verify2FA(c *fiber.Ctx) error {
+	var req dto.TwoFactorVerifyRequest
+	if err := c.BodyParser(&req); err != nil {
+		return errors.BadRequest("Invalid request body")
+	}
+
+	resp, err := h.authService.Verify2FA(c.Context(), &req)
+	if err != nil {
+		return err
+	}
+
+	setRefreshTokenCookie(c, resp.RefreshToken)
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data":    resp,
+	})
+}
+
+func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
+	refreshToken := c.Cookies("refresh_token")
+	if refreshToken == "" {
+		return errors.Unauthorized("Refresh token not found")
+	}
+
+	req := &dto.RefreshTokenRequest{RefreshToken: refreshToken}
+
+	resp, err := h.authService.RefreshToken(c.Context(), req)
+	if err != nil {
+		clearRefreshTokenCookie(c)
+		return err
+	}
+
+	setRefreshTokenCookie(c, resp.RefreshToken)
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data":    resp,
+	})
+}
+
+// ============================================================================
 // EMAIL VERIFICATION
 // ============================================================================
 
-// VerifyEmail godoc
-// @Summary Verify user email
-// @Tags Auth
-// @Accept json
-// @Produce json
-// @Param request body dto.VerifyEmailRequest true "Verification token"
-// @Success 200 {object} dto.VerifyEmailResponse
-// @Failure 400 {object} map[string]interface{}
-// @Router /auth/verify-email [post]
 func (h *AuthHandler) VerifyEmail(c *fiber.Ctx) error {
 	var req dto.VerifyEmailRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"success": false,
-			"error":   "Invalid request body",
-		})
+		return errors.BadRequest("Invalid request body")
 	}
 
 	resp, err := h.authService.VerifyEmail(c.Context(), &req)
 	if err != nil {
-		return handleError(c, err)
+		return err
 	}
 
 	return c.JSON(fiber.Map{
@@ -89,26 +136,15 @@ func (h *AuthHandler) VerifyEmail(c *fiber.Ctx) error {
 	})
 }
 
-// ResendVerificationEmail godoc
-// @Summary Resend verification email
-// @Tags Auth
-// @Accept json
-// @Produce json
-// @Param request body dto.ResendVerificationRequest true "User email"
-// @Success 200 {object} dto.ResendVerificationResponse
-// @Router /auth/resend-verification [post]
 func (h *AuthHandler) ResendVerificationEmail(c *fiber.Ctx) error {
 	var req dto.ResendVerificationRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"success": false,
-			"error":   "Invalid request body",
-		})
+		return errors.BadRequest("Invalid request body")
 	}
 
 	resp, err := h.authService.ResendVerificationEmail(c.Context(), &req)
 	if err != nil {
-		return handleError(c, err)
+		return err
 	}
 
 	return c.JSON(fiber.Map{
@@ -118,29 +154,18 @@ func (h *AuthHandler) ResendVerificationEmail(c *fiber.Ctx) error {
 }
 
 // ============================================================================
-// PASSWORD RESET
+// PASSWORD MANAGEMENT
 // ============================================================================
 
-// ForgotPassword godoc
-// @Summary Request password reset
-// @Tags Auth
-// @Accept json
-// @Produce json
-// @Param request body dto.ForgotPasswordRequest true "User email"
-// @Success 200 {object} dto.ForgotPasswordResponse
-// @Router /auth/forgot-password [post]
 func (h *AuthHandler) ForgotPassword(c *fiber.Ctx) error {
 	var req dto.ForgotPasswordRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"success": false,
-			"error":   "Invalid request body",
-		})
+		return errors.BadRequest("Invalid request body")
 	}
 
 	resp, err := h.authService.ForgotPassword(c.Context(), &req)
 	if err != nil {
-		return handleError(c, err)
+		return err
 	}
 
 	return c.JSON(fiber.Map{
@@ -149,27 +174,15 @@ func (h *AuthHandler) ForgotPassword(c *fiber.Ctx) error {
 	})
 }
 
-// ResetPassword godoc
-// @Summary Reset password with token
-// @Tags Auth
-// @Accept json
-// @Produce json
-// @Param request body dto.ResetPasswordRequest true "Reset token and new password"
-// @Success 200 {object} dto.ResetPasswordResponse
-// @Failure 400 {object} map[string]interface{}
-// @Router /auth/reset-password [post]
 func (h *AuthHandler) ResetPassword(c *fiber.Ctx) error {
 	var req dto.ResetPasswordRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"success": false,
-			"error":   "Invalid request body",
-		})
+		return errors.BadRequest("Invalid request body")
 	}
 
 	resp, err := h.authService.ResetPassword(c.Context(), &req)
 	if err != nil {
-		return handleError(c, err)
+		return err
 	}
 
 	return c.JSON(fiber.Map{
@@ -178,38 +191,20 @@ func (h *AuthHandler) ResetPassword(c *fiber.Ctx) error {
 	})
 }
 
-// ChangePassword godoc
-// @Summary Change user password (authenticated)
-// @Tags Auth
-// @Security BearerAuth
-// @Accept json
-// @Produce json
-// @Param request body dto.ChangePasswordRequest true "Current and new password"
-// @Success 200 {object} dto.ChangePasswordResponse
-// @Failure 400 {object} map[string]interface{}
-// @Failure 401 {object} map[string]interface{}
-// @Router /auth/change-password [post]
 func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
-	// Get user ID from context (set by auth middleware)
 	userID, err := middleware.GetUserID(c)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"success": false,
-			"error":   "Unauthorized",
-		})
+		return errors.Unauthorized("Unauthorized")
 	}
 
 	var req dto.ChangePasswordRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"success": false,
-			"error":   "Invalid request body",
-		})
+		return errors.BadRequest("Invalid request body")
 	}
 
 	resp, err := h.authService.ChangePassword(c.Context(), userID, &req)
 	if err != nil {
-		return handleError(c, err)
+		return err
 	}
 
 	return c.JSON(fiber.Map{
@@ -219,47 +214,31 @@ func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 }
 
 // ============================================================================
-// LOGOUT
+// LOGOUT & SESSIONS
 // ============================================================================
 
-// Logout godoc
-// @Summary Logout user
-// @Tags Auth
-// @Security BearerAuth
-// @Accept json
-// @Produce json
-// @Param request body dto.LogoutRequest true "Logout options"
-// @Success 200 {object} dto.LogoutResponse
-// @Failure 401 {object} map[string]interface{}
-// @Router /auth/logout [post]
 func (h *AuthHandler) Logout(c *fiber.Ctx) error {
-	// Get user ID and session ID from context
 	userID, err := middleware.GetUserID(c)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"success": false,
-			"error":   "Unauthorized",
-		})
+		return errors.Unauthorized("Unauthorized")
 	}
 
 	sessionID, err := middleware.GetSessionID(c)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"success": false,
-			"error":   "Unauthorized",
-		})
+		return errors.Unauthorized("Unauthorized")
 	}
 
 	var req dto.LogoutRequest
 	if err := c.BodyParser(&req); err != nil {
-		// Default: logout current session only
 		req.AllDevices = false
 	}
 
 	resp, err := h.authService.Logout(c.Context(), userID, sessionID, &req)
 	if err != nil {
-		return handleError(c, err)
+		return err
 	}
+
+	clearRefreshTokenCookie(c)
 
 	return c.JSON(fiber.Map{
 		"success": true,
@@ -267,30 +246,15 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	})
 }
 
-// ============================================================================
-// SESSION MANAGEMENT
-// ============================================================================
-
-// GetActiveSessions godoc
-// @Summary Get all active sessions
-// @Tags Auth
-// @Security BearerAuth
-// @Produce json
-// @Success 200 {array} utils.SessionData
-// @Failure 401 {object} map[string]interface{}
-// @Router /auth/sessions [get]
 func (h *AuthHandler) GetActiveSessions(c *fiber.Ctx) error {
 	userID, err := middleware.GetUserID(c)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"success": false,
-			"error":   "Unauthorized",
-		})
+		return errors.Unauthorized("Unauthorized")
 	}
 
 	sessions, err := h.authService.GetActiveSessions(c.Context(), userID)
 	if err != nil {
-		return handleError(c, err)
+		return err
 	}
 
 	return c.JSON(fiber.Map{
@@ -299,34 +263,19 @@ func (h *AuthHandler) GetActiveSessions(c *fiber.Ctx) error {
 	})
 }
 
-// RevokeSession godoc
-// @Summary Revoke a specific session
-// @Tags Auth
-// @Security BearerAuth
-// @Param session_id path string true "Session ID to revoke"
-// @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 401 {object} map[string]interface{}
-// @Router /auth/sessions/{session_id} [delete]
 func (h *AuthHandler) RevokeSession(c *fiber.Ctx) error {
 	userID, err := middleware.GetUserID(c)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"success": false,
-			"error":   "Unauthorized",
-		})
+		return errors.Unauthorized("Unauthorized")
 	}
 
 	sessionID := c.Params("session_id")
 	if sessionID == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"success": false,
-			"error":   "Session ID is required",
-		})
+		return errors.BadRequest("Session ID is required")
 	}
 
 	if err := h.authService.RevokeSessionByID(c.Context(), userID, sessionID); err != nil {
-		return handleError(c, err)
+		return err
 	}
 
 	return c.JSON(fiber.Map{
@@ -336,22 +285,29 @@ func (h *AuthHandler) RevokeSession(c *fiber.Ctx) error {
 }
 
 // ============================================================================
-// ERROR HANDLER
+// HELPERS
 // ============================================================================
 
-func handleError(c *fiber.Ctx, err error) error {
-	// Type assertion for custom AppError
-	if appErr, ok := err.(*errors.AppError); ok {
-		return c.Status(appErr.Code).JSON(fiber.Map{
-			"success": false,
-			"error":   appErr.Message,
-			"fields":  appErr.Fields,
-		})
-	}
+func setRefreshTokenCookie(c *fiber.Ctx, refreshToken string) {
+	c.Cookie(&fiber.Cookie{
+		Name:     "refresh_token",
+		Value:    refreshToken,
+		Path:     "/",
+		MaxAge:   7 * 24 * 60 * 60,
+		Secure:   true,
+		HTTPOnly: true,
+		SameSite: "Lax",
+	})
+}
 
-	// Default internal server error
-	return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-		"success": false,
-		"error":   "Something went wrong",
+func clearRefreshTokenCookie(c *fiber.Ctx) {
+	c.Cookie(&fiber.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Secure:   true,
+		HTTPOnly: true,
+		SameSite: "Lax",
 	})
 }

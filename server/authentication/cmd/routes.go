@@ -36,6 +36,13 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 		auth.Post("/verify-email", deps.AuthHandler.VerifyEmail)
 		auth.Post("/resend-verification", deps.AuthHandler.ResendVerificationEmail)
 
+		// Login & Token Refresh
+		auth.Post("/login", deps.AuthHandler.Login)
+		auth.Post("/refresh", deps.AuthHandler.RefreshToken)
+
+		// 2FA Verification (during login flow)
+		auth.Post("/2fa/verify", deps.AuthHandler.Verify2FA)
+
 		// Password Reset
 		auth.Post("/forgot-password", deps.AuthHandler.ForgotPassword)
 		auth.Post("/reset-password", deps.AuthHandler.ResetPassword)
