@@ -48,13 +48,19 @@ type Dependencies struct {
 	SessionManager *utils.Manager
 
 	// Services
-	AuthService  *services.AuthService
+	RegisterService  *services.RegisterService
+	LoginService  *services.LoginService
 	TwoFactorService  *services.TwoFactorService
+	PasswordService  *services.PasswordService
+	SessionService  *services.SessionService
 	EmailService *utils.EmailService
 
 	// Handlers
-	AuthHandler *handlers.AuthHandler
+	RegisterHandler *handlers.RegisterHandler
+	LoginHandler *handlers.LoginHandler
 	TwoFactorHandler *handlers.TwoFactorHandler
+	PasswordHandler *handlers.PasswordHandler
+	SessionHandler *handlers.SessionHandler
 }
 
 // ============================================================================
@@ -136,10 +142,23 @@ func InitDependencies() (*Dependencies, error) {
 	log.Info("✅ Repositories initialized")
 
 	// 9. Initialize Services
-	authService := services.NewAuthService(
+	registerService := services.NewRegisterService(
 		userRepo,
 		organizationRepo,
 		planRepo,
+		tokenRepo,
+		sessionManager,
+		emailService,
+		jwtManager,
+		totpManager,
+		cfg,
+		log,
+	)
+	log.Info("✅ Services initialized")
+
+	loginService := services.NewLoginService(
+		userRepo,
+		organizationRepo,
 		tokenRepo,
 		sessionManager,
 		emailService,
@@ -158,9 +177,32 @@ func InitDependencies() (*Dependencies, error) {
 	)
 	log.Info("✅ 2FA Service initialized")
 
+	passwordService := services.NewPasswordService(
+		userRepo,
+		tokenRepo,
+		emailService,
+		sessionManager,
+		cfg,
+		log,
+	)
+	log.Info("✅ Password Service initialized")
+
+	sessionService := services.NewSessionService(
+		userRepo,
+		sessionManager,
+		emailService,
+		jwtManager,
+		cfg,
+		log,
+	)
+	log.Info("✅ Session Service initialized")
+
 	// 10. Initialize Handlers
-	authHandler := handlers.NewAuthHandler(authService, log)
+	registerHandler := handlers.NewRegisterHandler(registerService, log)
+	loginHandler := handlers.NewLoginHandler(loginService, log)
 	twoFactorHandler := handlers.NewTwoFactorHandler(twoFactorService, log)
+	passwordHandler := handlers.NewPasswordHandler(passwordService, log)
+	sessionHandler := handlers.NewSessionHandler(sessionService, log)
 	log.Info("✅ Handlers initialized")
 
 	log.Info("🎉 All dependencies initialized successfully")
@@ -170,18 +212,28 @@ func InitDependencies() (*Dependencies, error) {
 		DB:               database,
 		Redis:            redisClient,
 		Logger:           log,
+
 		UserRepo:         userRepo,
 		OrganizationRepo: organizationRepo,
 		PlanRepo:         planRepo,
 		TokenRepo:        tokenRepo,
+
 		JWTManager:       jwtManager,
 		TOTPManager:      totpManager,
 		SessionManager:   sessionManager,
+
 		EmailService:     emailService,
-		AuthService:      authService,
+		RegisterService:  registerService,
+		LoginService:      loginService,
 		TwoFactorService: twoFactorService,
-		AuthHandler:      authHandler,
+		PasswordService:   passwordService,
+		SessionService:    sessionService,
+
+		RegisterHandler:  registerHandler,
+		LoginHandler:      loginHandler,
 		TwoFactorHandler: twoFactorHandler,
+		PasswordHandler:   passwordHandler,
+		SessionHandler:    sessionHandler,
 	}, nil
 }
 

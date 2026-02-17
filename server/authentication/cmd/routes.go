@@ -22,37 +22,37 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 	auth.Post("/register", rateLimiter.ByIP(middleware.RateLimitConfig{
 		RequestsPerWindow: 10,
 		WindowDuration:    60 * time.Second,
-	}), deps.AuthHandler.Register)
+	}), deps.RegisterHandler.Register)
 
 	auth.Post("/verify-email", rateLimiter.ByIP(middleware.RateLimitConfig{
 		RequestsPerWindow: 10,
 		WindowDuration:    60 * time.Second,
-	}), deps.AuthHandler.VerifyEmail)
+	}), deps.RegisterHandler.VerifyEmail)
 
-	auth.Post("/resend-verification", rateLimiter.ByIP(middleware.StrictRateLimit()), deps.AuthHandler.ResendVerificationEmail)
+	auth.Post("/resend-verification", rateLimiter.ByIP(middleware.StrictRateLimit()), deps.RegisterHandler.ResendVerificationEmail)
 
 	// Login — strict (5 req/min per IP)
-	auth.Post("/login", rateLimiter.ByIP(middleware.StrictRateLimit()), deps.AuthHandler.Login)
+	auth.Post("/login", rateLimiter.ByIP(middleware.StrictRateLimit()), deps.LoginHandler.Login)
 
 	// 2FA verify during login — strict (5 req/min per IP)
-	auth.Post("/2fa/verify", rateLimiter.ByIP(middleware.StrictRateLimit()), deps.AuthHandler.Verify2FA)
+	auth.Post("/2fa/verify", rateLimiter.ByIP(middleware.StrictRateLimit()), deps.LoginHandler.Verify2FA)
 
 	// Token refresh — moderate (20 req/min per IP)
 	auth.Post("/refresh", rateLimiter.ByIP(middleware.RateLimitConfig{
 		RequestsPerWindow: 20,
 		WindowDuration:    60 * time.Second,
-	}), deps.AuthHandler.RefreshToken)
+	}), deps.SessionHandler.RefreshToken)
 
 	// Password reset — very strict (3 req/min per IP)
 	auth.Post("/forgot-password", rateLimiter.ByIP(middleware.RateLimitConfig{
 		RequestsPerWindow: 3,
 		WindowDuration:    60 * time.Second,
-	}), deps.AuthHandler.ForgotPassword)
+	}), deps.PasswordHandler.ForgotPassword)
 
 	auth.Post("/reset-password", rateLimiter.ByIP(middleware.RateLimitConfig{
 		RequestsPerWindow: 3,
 		WindowDuration:    60 * time.Second,
-	}), deps.AuthHandler.ResetPassword)
+	}), deps.PasswordHandler.ResetPassword)
 
 	// ============================================================================
 	// PROTECTED ROUTES
@@ -62,8 +62,8 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 	protected.Use(rateLimiter.ByUser(middleware.GeneralRateLimit())) // 100 req/min per user
 
 	// Account management
-	protected.Post("/auth/change-password", deps.AuthHandler.ChangePassword)
-	protected.Post("/auth/logout", deps.AuthHandler.Logout)
+	protected.Post("/auth/change-password", deps.PasswordHandler.ChangePassword)
+	protected.Post("/auth/logout", deps.SessionHandler.Logout)
 
 	// Sessions — moderate (20 req/min per user)
 	sessions := protected.Group("/auth/sessions")
@@ -71,8 +71,8 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 		RequestsPerWindow: 20,
 		WindowDuration:    60 * time.Second,
 	}))
-	sessions.Get("/", deps.AuthHandler.GetActiveSessions)
-	sessions.Delete("/:session_id", deps.AuthHandler.RevokeSession)
+	sessions.Get("/", deps.SessionHandler.GetActiveSessions)
+	sessions.Delete("/:session_id", deps.SessionHandler.RevokeSession)
 
 	// 2FA management — strict (10 req/min per user)
 	twoFactor := protected.Group("/auth/2fa")
