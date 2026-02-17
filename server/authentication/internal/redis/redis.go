@@ -6,23 +6,41 @@ import (
 	"crypto/x509"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
-	"shared/config" 
+	"shared/config"
 	"shared/logger"
 
 	"github.com/redis/go-redis/v9"
 )
 
-// Client wraps redis.Client
+// ============================================================================
+// Client
+// ============================================================================
+
+// Client wraps redis.Client with config
 type Client struct {
 	*redis.Client
 	cfg *config.RedisConfig
 }
 
-var instance *Client
+// ============================================================================
+// Singleton — thread-safe
+// ============================================================================
 
-// Connect establishes Redis connection
+var (
+	instance *Client
+	once     sync.Once
+	mu       sync.RWMutex
+)
+
+// ============================================================================
+// Connect
+// ============================================================================
+
+// Connect establishes Redis connection with retry logic.
+// Safe to call from multiple goroutines — only connects once.
 func Connect(cfg *config.RedisConfig) (*Client, error) {
 	opts := &redis.Options{
 		Addr:            cfg.GetRedisAddr(),
@@ -39,7 +57,7 @@ func Connect(cfg *config.RedisConfig) (*Client, error) {
 		WriteTimeout:    cfg.WriteTimeout,
 	}
 
-	// TLS Configuration
+	// TLS
 	if cfg.TLSEnabled {
 		tlsConfig, err := buildTLSConfig(cfg)
 		if err != nil {
@@ -48,72 +66,100 @@ func Connect(cfg *config.RedisConfig) (*Client, error) {
 		opts.TLSConfig = tlsConfig
 	}
 
-	var client *redis.Client
-	var err error
+	// Minimum 1 attempt
+	attempts := cfg.RetryAttempts
+	if attempts <= 0 {
+		attempts = 1
+	}
 
-	// Retry Logic
-	for attempt := 1; attempt <= cfg.RetryAttempts; attempt++ {
-		logger.Info("Connecting to Redis...", "attempt", attempt)
+	var (
+		client *redis.Client
+		err    error
+	)
 
-		client = redis.NewClient(opts)
+	for attempt := 1; attempt <= attempts; attempt++ {
+		logger.Info("Connecting to Redis...", "attempt", attempt, "addr", cfg.GetRedisAddr())
+
+		c := redis.NewClient(opts)
+
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.DialTimeout)
-		err = client.Ping(ctx).Err()
+		err = c.Ping(ctx).Err()
 		cancel()
 
 		if err == nil {
+			client = c
 			break
 		}
 
 		logger.Error("Failed to ping Redis", err, "attempt", attempt)
-		client.Close()
-		time.Sleep(cfg.RetryDelay)
+		_ = c.Close()
+
+		if attempt < attempts {
+			time.Sleep(cfg.RetryDelay)
+		}
 	}
 
-	if err != nil {
-		return nil, fmt.Errorf("redis connection failed after %d attempts: %w", cfg.RetryAttempts, err)
+	if client == nil {
+		return nil, fmt.Errorf("redis connection failed after %d attempt(s): %w", attempts, err)
 	}
 
+	mu.Lock()
 	instance = &Client{
 		Client: client,
 		cfg:    cfg,
 	}
+	mu.Unlock()
 
-	logger.Info("Redis connected successfully", "pool_size", cfg.PoolSize)
+	logger.Info("Redis connected successfully",
+		"addr", cfg.GetRedisAddr(),
+		"pool_size", cfg.PoolSize,
+		"db", cfg.DB,
+	)
+
 	return instance, nil
 }
 
-// Get returns the singleton instance
+// ============================================================================
+// Get — thread-safe singleton access
+// ============================================================================
+
+// Get returns the singleton instance. Panics if Connect() was not called first.
 func Get() *Client {
+	mu.RLock()
+	defer mu.RUnlock()
+
 	if instance == nil {
-		panic("Redis not initialized. Call Connect() first")
+		panic("Redis not initialized — call Connect() first")
 	}
 	return instance
 }
 
-// Close closes the connection
+// ============================================================================
+// Close
+// ============================================================================
+
 func (r *Client) Close() error {
 	logger.Info("Closing Redis connection...")
+
+	mu.Lock()
+	instance = nil
+	mu.Unlock()
+
 	return r.Client.Close()
 }
 
-// ───────────────── Helper Functions ─────────────────
+// ============================================================================
+// Health Check
+// ============================================================================
 
-const incrExpiryLua = `
-local current = redis.call('INCR', KEYS[1])
-if current == 1 then
-    redis.call('EXPIRE', KEYS[1], ARGV[1])
-end
-return current
-`
-
-// IncrWithExpiry executes atomic increment with expiration
-func (r *Client) IncrWithExpiry(ctx context.Context, key string, expiry time.Duration) (int64, error) {
-	seconds := int(expiry.Seconds())
-	if seconds == 0 {
-		seconds = 1
-	}
-	return r.Eval(ctx, incrExpiryLua, []string{key}, seconds).Int64()
+// Ping checks if Redis is reachable
+func (r *Client) Ping(ctx context.Context) error {
+	return r.Client.Ping(ctx).Err()
 }
+
+// ============================================================================
+// TLS Helper
+// ============================================================================
 
 func buildTLSConfig(cfg *config.RedisConfig) (*tls.Config, error) {
 	tlsConfig := &tls.Config{
@@ -123,7 +169,7 @@ func buildTLSConfig(cfg *config.RedisConfig) (*tls.Config, error) {
 	if cfg.TLSCert != "" && cfg.TLSKey != "" {
 		cert, err := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to load TLS keypair: %w", err)
 		}
 		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
@@ -131,7 +177,7 @@ func buildTLSConfig(cfg *config.RedisConfig) (*tls.Config, error) {
 	if cfg.TLSCA != "" {
 		caCert, err := os.ReadFile(cfg.TLSCA)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to read CA cert: %w", err)
 		}
 		caCertPool := x509.NewCertPool()
 		if !caCertPool.AppendCertsFromPEM(caCert) {
