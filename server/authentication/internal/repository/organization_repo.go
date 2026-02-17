@@ -25,10 +25,9 @@ func NewOrganizationRepository(database *db.DB) *OrganizationRepository {
 	return &OrganizationRepository{db: database}
 }
 
-// ───────────────── Helpers ─────────────────
+// ───────────────── Helpers (Optimization & Safety) ─────────────────
 
-// withWriteContext creates a detached context for safe write operations.
-// Ensures data integrity even if the HTTP request is cancelled.
+// withWriteContext creates a detached context for safe Write operations.
 func (r *OrganizationRepository) withWriteContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), 5*time.Second)
 }
@@ -53,13 +52,10 @@ func (r *OrganizationRepository) performUpdate(query, opName string, resourceID 
 	return nil
 }
 
-// scanner is a common interface for *sql.Row and *sql.Rows
-type scanner interface{ Scan(...any) error }
-
-// scanOrg scans a single organization row
-func (r *OrganizationRepository) scanOrg(s scanner) (*models.Organization, error) {
+// scanOrg handles scanning organization rows to avoid duplication
+func (r *OrganizationRepository) scanOrg(scanner interface{ Scan(...any) error }) (*models.Organization, error) {
 	org := &models.Organization{}
-	err := s.Scan(
+	err := scanner.Scan(
 		&org.ID, &org.Name, &org.Slug, &org.OwnerID,
 		&org.PlanTier, &org.BillingPeriod, &org.SubscriptionStatus,
 		&org.LemonSqueezyCustomerID, &org.LemonSqueezySubscriptionID,
@@ -71,10 +67,10 @@ func (r *OrganizationRepository) scanOrg(s scanner) (*models.Organization, error
 	return org, err
 }
 
-// scanMember scans a single organization member row
-func (r *OrganizationRepository) scanMember(s scanner) (*models.OrganizationMember, error) {
+// scanMember handles scanning member rows
+func (r *OrganizationRepository) scanMember(scanner interface{ Scan(...any) error }) (*models.OrganizationMember, error) {
 	member := &models.OrganizationMember{}
-	err := s.Scan(
+	err := scanner.Scan(
 		&member.ID, &member.OrganizationID, &member.UserID, &member.Role,
 		&member.InvitedBy, &member.InvitationAcceptedAt,
 		&member.DeletedAt, &member.CreatedAt, &member.UpdatedAt,
@@ -82,24 +78,8 @@ func (r *OrganizationRepository) scanMember(s scanner) (*models.OrganizationMemb
 	return member, err
 }
 
-// orgCols centralizes organization column list
-const orgCols = `
-	id, name, slug, owner_id,
-	plan_tier, billing_period, subscription_status,
-	lemon_squeezy_customer_id, lemon_squeezy_subscription_id,
-	current_period_start, current_period_end,
-	monthly_events_limit, monthly_events_used, retention_days,
-	team_seats_limit, rate_limit_per_second, projects_limit,
-	metadata, deleted_at, created_at, updated_at`
-
-// memberCols centralizes member column list
-const memberCols = `
-	id, organization_id, user_id, role,
-	invited_by, invitation_accepted_at,
-	deleted_at, created_at, updated_at`
-
 // ============================================================================
-// CREATE
+// CREATE (Safe Write)
 // ============================================================================
 
 func (r *OrganizationRepository) Create(ctx context.Context, org *models.Organization) error {
@@ -115,10 +95,7 @@ func (r *OrganizationRepository) Create(ctx context.Context, org *models.Organiz
 			monthly_events_limit, monthly_events_used, retention_days,
 			team_seats_limit, rate_limit_per_second, projects_limit,
 			metadata, created_at, updated_at
-		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-			$11, $12, $13, $14, $15, $16, $17, $18, $19, $20
-		)`
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`
 
 	_, err := r.db.Exec(writeCtx, query,
 		org.ID, org.Name, org.Slug, org.OwnerID,
@@ -129,12 +106,13 @@ func (r *OrganizationRepository) Create(ctx context.Context, org *models.Organiz
 		org.TeamSeatsLimit, org.RateLimitPerSecond, org.ProjectsLimit,
 		org.Metadata, org.CreatedAt, org.UpdatedAt,
 	)
+
 	if err != nil {
 		logger.Error("Failed to create organization", err, "name", org.Name)
 		return errors.Wrap(err, 500, "Failed to create organization")
 	}
 
-	logger.Debug("Organization created", "org_id", org.ID)
+	logger.Debug("Organization created successfully", "org_id", org.ID)
 	return nil
 }
 
@@ -154,6 +132,7 @@ func (r *OrganizationRepository) CreateMembership(ctx context.Context, member *m
 		member.InvitedBy, member.InvitationAcceptedAt,
 		member.CreatedAt, member.UpdatedAt,
 	)
+
 	if err != nil {
 		logger.Error("Failed to create membership", err, "org_id", member.OrganizationID, "user_id", member.UserID)
 		return errors.Wrap(err, 500, "Failed to create organization membership")
@@ -162,11 +141,17 @@ func (r *OrganizationRepository) CreateMembership(ctx context.Context, member *m
 }
 
 // ============================================================================
-// READ
+// READ (Fast Read - Request Context)
 // ============================================================================
 
 func (r *OrganizationRepository) GetBySlug(ctx context.Context, slug string) (*models.Organization, error) {
-	query := `SELECT` + orgCols + `FROM organizations WHERE slug = $1 AND deleted_at IS NULL`
+	query := `
+		SELECT 
+			id, name, slug, owner_id, plan_tier, billing_period, subscription_status,
+			lemon_squeezy_customer_id, lemon_squeezy_subscription_id, current_period_start, current_period_end,
+			monthly_events_limit, monthly_events_used, retention_days, team_seats_limit, rate_limit_per_second, projects_limit,
+			metadata, deleted_at, created_at, updated_at
+		FROM organizations WHERE slug = $1 AND deleted_at IS NULL`
 
 	org, err := r.scanOrg(r.db.QueryRow(ctx, query, slug))
 	if err == sql.ErrNoRows {
@@ -181,7 +166,11 @@ func (r *OrganizationRepository) GetBySlug(ctx context.Context, slug string) (*m
 
 func (r *OrganizationRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]*models.Organization, error) {
 	query := `
-		SELECT ` + orgCols + `
+		SELECT 
+			o.id, o.name, o.slug, o.owner_id, o.plan_tier, o.billing_period, o.subscription_status,
+			o.lemon_squeezy_customer_id, o.lemon_squeezy_subscription_id, o.current_period_start, o.current_period_end,
+			o.monthly_events_limit, o.monthly_events_used, o.retention_days, o.team_seats_limit, o.rate_limit_per_second, o.projects_limit,
+			o.metadata, o.deleted_at, o.created_at, o.updated_at
 		FROM organizations o
 		INNER JOIN organization_members om ON o.id = om.organization_id
 		WHERE om.user_id = $1 AND o.deleted_at IS NULL AND om.deleted_at IS NULL
@@ -209,7 +198,6 @@ func (r *OrganizationRepository) ListByUser(ctx context.Context, userID uuid.UUI
 func (r *OrganizationRepository) ExistsBySlug(ctx context.Context, slug string) (bool, error) {
 	var exists bool
 	query := `SELECT EXISTS(SELECT 1 FROM organizations WHERE slug = $1 AND deleted_at IS NULL)`
-
 	if err := r.db.QueryRow(ctx, query, slug).Scan(&exists); err != nil {
 		logger.Error("Failed to check slug existence", err, "slug", slug)
 		return false, errors.Internal(err)
@@ -222,7 +210,9 @@ func (r *OrganizationRepository) ExistsBySlug(ctx context.Context, slug string) 
 // ============================================================================
 
 func (r *OrganizationRepository) GetMembership(ctx context.Context, orgID, userID uuid.UUID) (*models.OrganizationMember, error) {
-	query := `SELECT` + memberCols + `FROM organization_members
+	query := `
+		SELECT id, organization_id, user_id, role, invited_by, invitation_accepted_at, deleted_at, created_at, updated_at
+		FROM organization_members
 		WHERE organization_id = $1 AND user_id = $2 AND deleted_at IS NULL`
 
 	member, err := r.scanMember(r.db.QueryRow(ctx, query, orgID, userID))
