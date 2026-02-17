@@ -276,7 +276,7 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Lo
 		}
 
 		// Store temp token
-		if err := s.tokenRepo.Store2FATempToken(ctx, user.ID, tempToken, 5*60); err != nil {
+		if err := s.tokenRepo.Store2FATempToken(ctx, user.ID, tempToken, 5*time.Minute); err != nil {
 			s.log.Error("Failed to store 2FA temp token", err, "user_id", user.ID)
 			return nil, errors.Internal(err)
 		}
