@@ -1,17 +1,27 @@
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner"; 
-import { useChangePassword } from "@/hooks/useAuth"; 
+import { useChangePassword, useLogout } from "@/hooks/useAuth"; 
 import AuthInput from "@/common/AuthInput";
 import SubmitButton from "@/common/SubmitButton";
 import { LockClosed } from "@/svg/Auth";
-import { useEffect } from "react";
 import { changePasswordSchema, type ChangePasswordFormData } from "@/schemas/user.schema";
+import { QuestionMark } from "@/svg/Common";
 
 // ─────────────────────────── Component ─────────────────────────────
 export const ChangePasswordForm = () => {
-  // Hook usage
-  const { changePassword, isPending, isSuccess, isError, error, reset: resetMutation } = useChangePassword();
+  // Change Password Hook
+  const { 
+    changePassword, 
+    isPending, 
+    isSuccess, 
+    isError, 
+    error, 
+  } = useChangePassword();
+
+  // Logout Hook
+  const { logout } = useLogout();
 
   const {
     register,
@@ -29,16 +39,28 @@ export const ChangePasswordForm = () => {
 
   // Handle Success/Error Side Effects
   useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>;
+
     if (isSuccess) {
-      toast.success("Password changed successfully.");
+      toast.success("Password changed successfully. Logging out from all devices...");
+      
       resetForm();
-      resetMutation();
+      
+      timeoutId = setTimeout(() => {
+        logout({ all_devices: true });
+      }, 2000);
     }
+
     if (isError) {
       const errorMessage = (error as any)?.response?.data?.error || "Failed to change password.";
       toast.error(errorMessage);
     }
-  }, [isSuccess, isError, error, resetForm, resetMutation]);
+
+    // Cleanup timeout if component unmounts naturally
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isSuccess, isError, error, resetForm, logout]); 
 
   const onSubmit = (data: ChangePasswordFormData) => {
     changePassword({
@@ -74,7 +96,7 @@ export const ChangePasswordForm = () => {
               placeholder="Enter current password"
               register={register}
               error={errors.current_password?.message}
-              disabled={isPending}
+              disabled={isPending} 
             />
           </div>
 
@@ -103,8 +125,8 @@ export const ChangePasswordForm = () => {
 
         {/* Footer Actions */}
         <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-xs text-zinc-400 text-center sm:text-left">
-            Changing password will log you out of all other sessions.
+          <p className="text-sm text-zinc-400 text-center sm:text-left flex items-center gap-2">
+            <QuestionMark className="w-5 h-5" /> You will be logged out from all active sessions.
           </p>
           <div className="w-full sm:w-auto">
             <SubmitButton loading={isPending} className="w-full sm:w-auto px-6">

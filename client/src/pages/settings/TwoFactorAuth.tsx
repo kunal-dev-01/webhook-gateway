@@ -15,6 +15,7 @@ import {
 // Components
 import AuthInput from "@/common/AuthInput";
 import SubmitButton from "@/common/SubmitButton";
+import DeleteButton from "@/common/DeleteButton";
 
 // Types
 import { 
@@ -31,10 +32,9 @@ import {
   type RegenerateBackupCodesForm,
 } from "@/schemas/2fa.schema";
 
-// Icons (Adjust paths if needed)
+// Icons
 import { Copy, Shield, TriangleAlert } from "@/svg/Common"; 
 import { Smartphone } from "@/svg/Auth";
-import DeleteButton from "@/common/DeleteButton";
 
 // ─────────────────────────── Component ─────────────────────────────
 export const TwoFactorAuth = () => {
@@ -49,6 +49,9 @@ export const TwoFactorAuth = () => {
   // Local State
   const [step, setStep] = useState<"idle" | "setup" | "backup_codes" | "disable" | "regenerate">("idle");
   
+  // NEW: State to toggle between TOTP Code and Recovery Code for disabling
+  const [disableMethod, setDisableMethod] = useState<"totp" | "recovery">("totp");
+
   // Data States
   const [setupData, setSetupData] = useState<Enable2FAResponse | null>(null);
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
@@ -61,7 +64,7 @@ export const TwoFactorAuth = () => {
 
   const disableForm = useForm<Disable2FAForm>({
     resolver: zodResolver(disable2FASchema),
-    defaultValues: { password: "" },
+    defaultValues: { password: "", code: "", recovery_code: "" },
   });
 
   const regenerateForm = useForm<RegenerateBackupCodesForm>({
@@ -117,10 +120,17 @@ export const TwoFactorAuth = () => {
     );
   };
 
-  // 3. Disable 2FA
+  // 3. Disable 2FA (UPDATED LOGIC)
   const onDisableSubmit = (data: Disable2FAForm) => {
+    // Determine payload based on selected method
+    const payload = {
+      password: data.password,
+      code: disableMethod === "totp" ? data.code : undefined,
+      recovery_code: disableMethod === "recovery" ? data.recovery_code : undefined,
+    };
+
     disableMutation.disable2FA(
-      { password: data.password },
+      payload,
       {
         onSuccess: () => {
           if (user) {
@@ -129,11 +139,12 @@ export const TwoFactorAuth = () => {
           toast.success("2FA disabled successfully.");
           setStep("idle");
           disableForm.reset();
+          setDisableMethod("totp"); // Reset method
           setSetupData(null);
           setRecoveryCodes([]);
         },
         onError: (error: any) => {
-          const msg = error?.response?.data?.error || "Incorrect password.";
+          const msg = error?.response?.data?.error || "Incorrect password or code.";
           toast.error(msg);
         },
       }
@@ -178,7 +189,7 @@ export const TwoFactorAuth = () => {
           <h2 className="text-xl font-bold text-zinc-900 dark:text-white flex items-center gap-2">
             Two-Factor Authentication
             {is2FAEnabled && (
-              <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200">
+              <span className="text-xs bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-600 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-900">
                 Enabled
               </span>
             )}
@@ -220,7 +231,11 @@ export const TwoFactorAuth = () => {
                     Regenerate Backup Codes
                 </button>
                 <button
-                    onClick={() => setStep("disable")}
+                    onClick={() => {
+                        setStep("disable");
+                        setDisableMethod("totp"); // Reset to default
+                        disableForm.reset();
+                    }}
                     className="px-4 py-2 text-sm font-medium text-red-600 bg-white dark:bg-zinc-800 border border-red-200 dark:border-red-900/30 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors"
                 >
                     Disable 2FA
@@ -271,7 +286,7 @@ export const TwoFactorAuth = () => {
                       setStep("idle");
                       verifyForm.reset();
                     }}
-                    className="px-4 py-2 text-zinc-500 hover:text-zinc-700 font-medium text-sm"
+                    className="px-4 py-2.5 bg-white dark:bg-zinc-800 border border-red-200 dark:border-red-900/30 text-red-700 dark:text-red-400 font-medium rounded-xl dark:hover:bg-zinc-700 hover:bg-red-50 transition-colors"
                   >
                     Cancel
                   </button>
@@ -368,21 +383,22 @@ export const TwoFactorAuth = () => {
         </div>
       )}
 
-      {/* ─────────────────────────── DISABLE FORM ─────────────────────────── */}
+      {/* ─────────────────────────── DISABLE FORM (UPDATED) ─────────────────────────── */}
       {step === "disable" && (
         <div className="animate-in fade-in slide-in-from-top-2 duration-300 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 rounded-2xl p-6">
-          <form onSubmit={disableForm.handleSubmit(onDisableSubmit)} className="space-y-4">
+          <form onSubmit={disableForm.handleSubmit(onDisableSubmit)} className="space-y-5">
             <div>
                 <h3 className="font-semibold text-red-900 dark:text-red-200 flex items-center gap-2 text-lg">
                     Disable Two-Factor Authentication
                 </h3>
                 <p className="text-sm text-red-700 dark:text-red-300 mt-1">
-                    Enter your password to confirm. This will significantly lower your account security.
+                    Enter your password and a verification code to confirm. This will significantly lower your account security.
                 </p>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-end">
-                <div className="flex-1 w-full">
+            <div className="flex flex-col gap-4">
+                {/* Field 1: Password (Required) */}
+                <div className="w-full">
                 <AuthInput
                     label="Current Password"
                     type="password"
@@ -393,10 +409,55 @@ export const TwoFactorAuth = () => {
                     disabled={disableMutation.isPending}
                 />
                 </div>
-                <div className="flex gap-3 w-full sm:w-auto">
+
+                {/* Field 2: Dynamic Input (Code OR Recovery Code) */}
+                <div className="w-full">
+                  {disableMethod === "totp" ? (
+                    <AuthInput
+                      label="Authenticator Code (TOTP)"
+                      type="text"
+                      name="code"
+                      placeholder="000 000"
+                      register={disableForm.register}
+                      error={disableForm.formState.errors.code?.message}
+                      disabled={disableMutation.isPending}
+                    />
+                  ) : (
+                    <AuthInput
+                      label="Recovery Code"
+                      type="text"
+                      name="recovery_code"
+                      placeholder="xxxxx-xxxxx"
+                      register={disableForm.register}
+                      error={disableForm.formState.errors.recovery_code?.message}
+                      disabled={disableMutation.isPending}
+                    />
+                  )}
+                  
+                  {/* Toggle Link */}
+                  <div className="mt-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => {
+                          const newMethod = disableMethod === "totp" ? "recovery" : "totp";
+                          setDisableMethod(newMethod);
+                          disableForm.clearErrors(); 
+                          disableForm.setValue(newMethod === "totp" ? "recovery_code" : "code", "");
+                      }}
+                      className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer font-medium"
+                    >
+                      {disableMethod === "totp" 
+                        ? "Lost your device? Use a recovery code." 
+                        : "Use Authenticator App code instead."}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-2">
                     <DeleteButton 
                         loading={disableMutation.isPending} 
-                        className="px-6"
+                        className="flex-1"
                     >
                         {disableMutation.isPending ? "Disabling..." : "Confirm Disable"}
                     </DeleteButton>

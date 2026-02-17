@@ -9,13 +9,17 @@ export const verify2FASchema = z.object({
     .regex(/^\d+$/, "Code must contain only numbers"),
 });
 
-// Schema for Disabling 2FA (Requires Password per Disable2FARequest type)
+// Schema for Disabling 2FA (Updated)
 export const disable2FASchema = z.object({
   password: z
     .string()
     .min(1, "Password is required to disable 2FA"),
-  code: z.string().optional(), // Optional TOTP code
-  recovery_code: z.string().optional(), // OR recovery code
+  code: z.string().optional(),
+  recovery_code: z.string().optional(),
+}).refine((data) => data.code || data.recovery_code, {
+  // Ye check karega ki dono mein se kam se kam ek value jarur ho
+  message: "Please enter verification code or recovery code",
+  path: ["code"], 
 });
 
 // Schema for Regenerating Backup Codes (Requires Password)
