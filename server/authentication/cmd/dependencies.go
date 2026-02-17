@@ -295,16 +295,6 @@ func main() {
 		// Get pool stats
 		stats := deps.DB.Stats()
 		
-		// Plans check
-		plansHealthy := true
-		plansCount := 0
-		plans, err := deps.PlanRepo.ListAll(ctx)
-		if err != nil {
-			plansHealthy = false
-		} else {
-			plansCount = len(plans)
-		}
-		
 		return c.JSON(fiber.Map{
 			"status":    "ok",
 			"service":   "authentication",
@@ -319,10 +309,6 @@ func main() {
 						"in_use":  stats.InUse,
 						"idle":    stats.Idle,
 					},
-				},
-				"subscription_plans": fiber.Map{
-					"healthy": plansHealthy,
-					"count":   plansCount,
 				},
 			},
 		})

@@ -22,12 +22,12 @@ import (
 type AuthService struct {
 	userRepo         *repository.UserRepository
 	organizationRepo *repository.OrganizationRepository
-	planRepo         *repository.SubscriptionPlanRepository 
+	planRepo         *repository.SubscriptionPlanRepository
 	tokenRepo        *repository.TokenRepository
 	sessionMgr       *utils.Manager
 	emailService     *utils.EmailService
 	jwtManager       *auth.TokenManager
-	totpMgr             *utils.TOTPManager
+	totpMgr          *utils.TOTPManager
 	cfg              *config.Config
 	log              *logger.Logger
 }
@@ -149,8 +149,8 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 	}
 
 	// Create organization with selected plan limits
-	orgSlug := sharedUtils.GenerateSlug(fmt.Sprintf("%s-workspace", user.FullName))
-	
+	orgSlug := fmt.Sprintf("%s-%s", sharedUtils.GenerateSlug(fmt.Sprintf("%s-workspace", user.FullName)), uuid.New().String()[:8])
+
 	// Ensure slug is unique
 	slugExists, _ := s.organizationRepo.ExistsBySlug(ctx, orgSlug)
 	if slugExists {
@@ -165,7 +165,7 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		PlanTier:           plan.Tier,
 		BillingPeriod:      plan.BillingPeriod,
 		SubscriptionStatus: models.SubscriptionActive,
-		
+
 		// Plan limits from database (subscription_plans table)
 		MonthlyEventsLimit: plan.MonthlyEventsLimit,
 		MonthlyEventsUsed:  0,
@@ -173,7 +173,7 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		TeamSeatsLimit:     plan.TeamSeatsLimit,
 		RateLimitPerSecond: plan.RateLimitPerSecond,
 		ProjectsLimit:      plan.ProjectsLimit,
-		
+
 		// Initialize metadata
 		Metadata:  models.OrganizationMetadata{},
 		CreatedAt: time.Now(),
@@ -189,7 +189,7 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		}
 		organization.CurrentPeriodStart = &now
 		organization.CurrentPeriodEnd = &periodEnd
-		
+
 		// Note: LemonSqueezy customer_id and subscription_id will be set later via webhook
 		// when actual payment is completed
 	}
@@ -219,8 +219,8 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 	// Send verification email asynchronously
 	s.sendVerificationEmailAsync(user)
 
-	s.log.Info("User registered successfully", 
-		"user_id", user.ID, 
+	s.log.Info("User registered successfully",
+		"user_id", user.ID,
 		"email", user.Email,
 		"plan", plan.Tier,
 		"billing", plan.BillingPeriod,
@@ -228,7 +228,7 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 	)
 
 	return &dto.RegisterResponse{
-		Message:      "Registration successful! Please check your email to verify your account.",
+		Message: "Registration successful! Please check your email to verify your account.",
 	}, nil
 }
 
@@ -857,7 +857,6 @@ func (s *AuthService) sendPasswordResetEmailAsync(user *models.User, token strin
 		}
 	}()
 }
-
 
 // ============================================================================
 // HELPER: Remove Used Recovery Code

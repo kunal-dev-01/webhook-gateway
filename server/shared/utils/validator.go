@@ -320,8 +320,8 @@ func GenerateSlug(name string) string {
 	slug = strings.Trim(slug, "-")
 	
 	// Limit length to 50 characters
-	if len(slug) > 50 {
-		slug = slug[:50]
+	if len(slug) > 41 {
+		slug = slug[:41]
 		slug = strings.TrimRight(slug, "-")
 	}
 	
