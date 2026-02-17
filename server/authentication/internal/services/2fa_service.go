@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64" // <--- Import Add kiya
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/skip2/go-qrcode"
@@ -61,10 +62,10 @@ func (s *TwoFactorService) Enable2FA(ctx context.Context, userID uuid.UUID) (*dt
 	}
 
 	// Store encrypted secret in Redis (10 mins)
-	if err := s.tokenRepo.Store2FASetupSecret(ctx, userID, encryptedSecret, 10*60); err != nil {
-		s.log.Error("Failed to store 2FA setup secret", err, "user_id", userID)
-		return nil, err
-	}
+	if err := s.tokenRepo.Store2FASetupSecret(ctx, userID, encryptedSecret, 10*time.Minute); err != nil {
+    s.log.Error("Failed to store 2FA setup secret", err, "user_id", userID)
+    return nil, err
+}
 
 	// Generate QR code (Returns []byte)
 	qrCodeBytes, err := qrcode.Encode(provisioningURI, qrcode.Medium, 256)

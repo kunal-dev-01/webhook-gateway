@@ -97,7 +97,7 @@ func (t *TOTPManager) Validate(encryptedSecret, code string) (bool, error) {
 		time.Now().UTC(),
 		totp.ValidateOpts{
 			Period:    30,
-			Skew:      1,
+			Skew:      2,
 			Digits:    otp.DigitsSix,
 			Algorithm: otp.AlgorithmSHA1,
 		},

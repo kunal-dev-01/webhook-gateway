@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 
 // Store & Hooks
@@ -235,8 +234,8 @@ export const TwoFactorAuth = () => {
         <div className="bg-zinc-50 dark:bg-zinc-800/30 rounded-2xl p-6 border border-zinc-200 dark:border-zinc-800 animate-in fade-in slide-in-from-top-4 duration-300">
           <div className="flex flex-col md:flex-row gap-8">
             <div className="shrink-0 flex items-center justify-center">
-              <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm">
-                <QRCodeSVG value={setupData.qr_code_url} size={180} level="M" />
+              <div className="p-3 bg-white rounded-2xl border border-zinc-200 dark:border-zinc-700 w-62 h-62">
+                <img src={setupData.qr_code_url} alt="QR Code" />
               </div>
             </div>
 
