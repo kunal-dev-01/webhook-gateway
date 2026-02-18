@@ -282,7 +282,7 @@ func getCORSConfig(cfg *config.Config) cors.Config {
 		}
 		return cors.Config{
 			AllowOrigins:     origins,
-			AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
+			AllowMethods:     "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 			AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
 			AllowCredentials: true,
 			MaxAge:           3600,
@@ -291,7 +291,7 @@ func getCORSConfig(cfg *config.Config) cors.Config {
 
 	return cors.Config{
 		AllowOrigins:     origins,
-		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
+		AllowMethods:     "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 		AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
 		AllowCredentials: true,
 		MaxAge:           3600,
