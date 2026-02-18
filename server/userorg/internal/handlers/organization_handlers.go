@@ -10,6 +10,7 @@ import (
 	"shared/errors"
 	"shared/logger"
 	"shared/middleware"
+	"shared/models"
 )
 
 type OrganizationHandler struct {
@@ -127,6 +128,47 @@ func (h *OrganizationHandler) ListMembers(c *fiber.Ctx) error {
 	}
 
 	resp, err := h.orgService.ListMembers(c.Context(), orgID, userID, req)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data":    resp,
+	})
+}
+
+// ============================================================================
+// UPDATE MEMBER ROLE
+// ============================================================================
+
+func (h *OrganizationHandler) UpdateMemberRole(c *fiber.Ctx) error {
+	callerID, err := middleware.GetUserID(c)
+	if err != nil {
+		return errors.Unauthorized("Unauthorized")
+	}
+
+	orgID, err := uuid.Parse(c.Params("org_id"))
+	if err != nil {
+		return errors.BadRequest("Invalid organization ID")
+	}
+
+	targetUserID, err := uuid.Parse(c.Params("user_id"))
+	if err != nil {
+		return errors.BadRequest("Invalid user ID")
+	}
+
+	var body struct {
+		Role models.OrganizationMemberRole `json:"role"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return errors.BadRequest("Invalid request body")
+	}
+	if body.Role == "" {
+		return errors.BadRequest("role is required")
+	}
+
+	resp, err := h.orgService.UpdateMemberRole(c.Context(), orgID, callerID, targetUserID, body.Role)
 	if err != nil {
 		return err
 	}

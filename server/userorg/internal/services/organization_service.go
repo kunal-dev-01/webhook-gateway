@@ -146,6 +146,53 @@ func (s *OrganizationService) ListMembers(ctx context.Context, orgID, userID uui
 }
 
 // ============================================================================
+// UPDATE MEMBER ROLE
+// ============================================================================
+
+func (s *OrganizationService) UpdateMemberRole(ctx context.Context, orgID, callerID, targetUserID uuid.UUID, newRole models.OrganizationMemberRole) (*dto.MemberResponse, error) {
+	// Owner role is not assignable via this endpoint — use TransferOwnership
+	if newRole == models.RoleOwner {
+		return nil, errors.BadRequest("Cannot assign owner role directly. Use transfer ownership")
+	}
+	if !newRole.IsValid() {
+		return nil, errors.BadRequest("Invalid role. Must be one of: admin, member, viewer")
+	}
+
+	// Khud apna role change nahi kar sakta
+	if callerID == targetUserID {
+		return nil, errors.BadRequest("You cannot change your own role")
+	}
+
+	callerMember, err := s.orgRepo.GetMembership(ctx, orgID, callerID)
+	if err != nil {
+		return nil, errors.Forbidden("You are not a member of this organization")
+	}
+	if callerMember.Role != models.RoleOwner {
+		return nil, errors.Forbidden("Only the owner can change member roles")
+	}
+
+	targetMember, err := s.orgRepo.GetMembership(ctx, orgID, targetUserID)
+	if err != nil {
+		return nil, errors.NotFound("Member not found in this organization")
+	}
+
+	// Owner ko demote nahi kar sakte is endpoint se
+	if targetMember.Role == models.RoleOwner {
+		return nil, errors.Forbidden("Owner role cannot be changed. Use transfer ownership")
+	}
+
+	if err := s.orgRepo.UpdateMemberRole(ctx, orgID, targetUserID, newRole); err != nil {
+		s.log.Error("Failed to update member role", err, "org_id", orgID, "target_user_id", targetUserID)
+		return nil, err
+	}
+
+	s.log.Info("Member role updated", "org_id", orgID, "updated_by", callerID, "target_user", targetUserID, "new_role", newRole)
+
+	targetMember.Role = newRole
+	return dto.ToMemberResponse(targetMember), nil
+}
+
+// ============================================================================
 // REMOVE MEMBER
 // ============================================================================
 

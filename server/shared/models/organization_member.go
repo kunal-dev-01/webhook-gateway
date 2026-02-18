@@ -1,30 +1,56 @@
 package models
 
 import (
-	"slices"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 )
 
+var roleLevel = map[OrganizationMemberRole]int{
+	RoleViewer: 1,
+	RoleMember: 2,
+	RoleAdmin:  3,
+	RoleOwner:  4,
+}
+
+func (r OrganizationMemberRole) Level() int {
+	return roleLevel[r]
+}
+
+func (r OrganizationMemberRole) IsValid() bool {
+	_, ok := roleLevel[r]
+	return ok
+}
+
+// IsAtLeast returns true if this role has >= permissions than the given minimum.
+func (r OrganizationMemberRole) IsAtLeast(min OrganizationMemberRole) bool {
+	return r.Level() >= min.Level()
+}
+
+// CanManage returns true if caller can manage target.
+// Rule: strictly higher level only.
+func (r OrganizationMemberRole) CanManage(target OrganizationMemberRole) bool {
+	return r.Level() > target.Level()
+}
+
+func (r OrganizationMemberRole) String() string {
+	return string(r)
+}
+
 // ============================================================================
 // ORGANIZATION MEMBER MODEL
 // ============================================================================
 
-// OrganizationMember represents a team member in an organization
 type OrganizationMember struct {
-	// Primary identification
-	ID             uuid.UUID `db:"id" json:"id"`
-	OrganizationID uuid.UUID `db:"organization_id" json:"organization_id"`
-	UserID         uuid.UUID `db:"user_id" json:"user_id"`
-
-	// Role in organization
-	Role OrganizationMemberRole `db:"role" json:"role"`
+	ID             uuid.UUID              `db:"id" json:"id"`
+	OrganizationID uuid.UUID              `db:"organization_id" json:"organization_id"`
+	UserID         uuid.UUID              `db:"user_id" json:"user_id"`
+	Role           OrganizationMemberRole `db:"role" json:"role"`
 
 	// Invitation tracking
-	InvitedBy             *uuid.UUID `db:"invited_by" json:"invited_by,omitempty"`
-	InvitationAcceptedAt  *time.Time `db:"invitation_accepted_at" json:"invitation_accepted_at,omitempty"`
+	InvitedBy            *uuid.UUID `db:"invited_by" json:"invited_by,omitempty"`
+	InvitationAcceptedAt *time.Time `db:"invitation_accepted_at" json:"invitation_accepted_at,omitempty"`
 
 	// Soft delete
 	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
@@ -38,22 +64,18 @@ type OrganizationMember struct {
 // ROLE HELPERS
 // ============================================================================
 
-// IsOwner checks if member is owner
 func (m *OrganizationMember) IsOwner() bool {
 	return m.Role == RoleOwner
 }
 
-// IsAdmin checks if member is admin or owner
 func (m *OrganizationMember) IsAdmin() bool {
 	return m.Role == RoleAdmin || m.Role == RoleOwner
 }
 
-// CanManageMembers checks if member can manage other members
 func (m *OrganizationMember) CanManageMembers() bool {
 	return m.Role == RoleOwner || m.Role == RoleAdmin
 }
 
-// CanInviteMembers checks if member can invite new members
 func (m *OrganizationMember) CanInviteMembers() bool {
 	return m.Role == RoleOwner || m.Role == RoleAdmin
 }
@@ -62,7 +84,6 @@ func (m *OrganizationMember) CanInviteMembers() bool {
 // VALIDATION
 // ============================================================================
 
-// Validate validates the organization member struct
 func (m *OrganizationMember) Validate() error {
 	if m.OrganizationID == uuid.Nil {
 		return fmt.Errorf("organization ID is required")
@@ -70,10 +91,7 @@ func (m *OrganizationMember) Validate() error {
 	if m.UserID == uuid.Nil {
 		return fmt.Errorf("user ID is required")
 	}
-	// Validate role
-	validRoles := []OrganizationMemberRole{RoleOwner, RoleAdmin, RoleMember, RoleViewer}
-	validRole := slices.Contains(validRoles, m.Role)
-	if !validRole {
+	if !m.Role.IsValid() {
 		return fmt.Errorf("invalid role")
 	}
 	return nil
@@ -83,13 +101,11 @@ func (m *OrganizationMember) Validate() error {
 // SOFT DELETE
 // ============================================================================
 
-// SoftDelete soft deletes the member
 func (m *OrganizationMember) SoftDelete() {
 	now := time.Now()
 	m.DeletedAt = &now
 }
 
-// IsDeleted checks if member is soft deleted
 func (m *OrganizationMember) IsDeleted() bool {
 	return m.DeletedAt != nil
 }
@@ -98,7 +114,6 @@ func (m *OrganizationMember) IsDeleted() bool {
 // PUBLIC RESPONSE
 // ============================================================================
 
-// PublicOrganizationMember represents safe member data for API responses
 type PublicOrganizationMember struct {
 	ID                   uuid.UUID              `json:"id"`
 	OrganizationID       uuid.UUID              `json:"organization_id"`
@@ -109,7 +124,6 @@ type PublicOrganizationMember struct {
 	CreatedAt            time.Time              `json:"created_at"`
 }
 
-// ToPublic converts OrganizationMember to PublicOrganizationMember
 func (m *OrganizationMember) ToPublic() *PublicOrganizationMember {
 	return &PublicOrganizationMember{
 		ID:                   m.ID,

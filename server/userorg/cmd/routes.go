@@ -33,5 +33,6 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 	orgs.Get("/:org_id", deps.OrgHandler.GetOrganization)
 	orgs.Patch("/:org_id", deps.OrgHandler.UpdateName)
 	orgs.Get("/:org_id/members", deps.OrgHandler.ListMembers)
+	orgs.Patch("/:org_id/members/:user_id/role", deps.OrgHandler.UpdateMemberRole)
 	orgs.Delete("/:org_id/members/:user_id", deps.OrgHandler.RemoveMember)
 }
