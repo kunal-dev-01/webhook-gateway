@@ -21,7 +21,7 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 	protected.Use(rateLimiter.ByUser(middleware.GeneralRateLimit()))
 
 	// User routes
-	users := protected.Group("/users")
+	users := protected.Group("/user")
 	users.Get("/me", deps.UserHandler.GetMe)
 	users.Patch("/me", deps.UserHandler.UpdateUser)
 	users.Put("/me/avatar", deps.UserHandler.UpdateAvatar)

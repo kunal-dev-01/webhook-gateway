@@ -18,3 +18,35 @@ export interface User {
   preferences: UserPreferences;
   created_at: Date; 
 }
+
+export interface UpdateUserRequest {
+  full_name: string;
+}
+
+export interface UpdateUserResponse {
+  full_name: string;
+}
+
+export interface UpdateAvatarResponse {
+  avatar_url: string;
+}
+
+export interface UpdatePreferencesRequest {
+  preferences: {
+    theme: string;
+    email_notifications: boolean;
+    timezone: string;
+  };
+}
+
+export interface UpdatePreferencesResponse {
+  preferences: {
+    theme: string;
+    email_notifications: boolean;
+    timezone: string;
+  };
+}
+
+export interface GetMeResponse {
+  user: User;
+}

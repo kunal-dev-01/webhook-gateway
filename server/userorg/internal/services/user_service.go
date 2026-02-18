@@ -59,26 +59,22 @@ func (s *UserService) GetMe(ctx context.Context, userID uuid.UUID) (*dto.GetMeRe
 // ============================================================================
 
 func (s *UserService) UpdateUser(ctx context.Context, userID uuid.UUID, req *dto.UpdateUserRequest) (*dto.UpdateUserResponse, error) {
-	user, err := s.userRepo.GetByID(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
+    if req.FullName == nil {
+        return nil, errors.BadRequest("full_name is required")
+    }
 
-	if req.FullName != nil {
-		if err := sharedUtils.ValidateLength(*req.FullName, 2, 255, "full name"); err != nil {
-			return nil, errors.BadRequest(err.Error())
-		}
-		user.FullName = *req.FullName
-	}
+    if err := sharedUtils.ValidateLength(*req.FullName, 2, 255, "full name"); err != nil {
+        return nil, errors.BadRequest(err.Error())
+    }
 
-	if err := s.userRepo.UpdateFullName(ctx, userID, *req.FullName); err != nil {
-		s.log.Error("Failed to update user", err, "user_id", userID)
-		return nil, errors.Internal(err)
-	}
+    if err := s.userRepo.UpdateFullName(ctx, userID, *req.FullName); err != nil {
+        s.log.Error("Failed to update full name", err, "user_id", userID)
+        return nil, err
+    }
 
-	return &dto.UpdateUserResponse{
-		FullName:  *req.FullName,
-	}, nil
+    return &dto.UpdateUserResponse{
+        FullName: *req.FullName,
+    }, nil
 }
 
 // ============================================================================
