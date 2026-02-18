@@ -9,20 +9,25 @@ import (
 // ============================================================================
 // UPDATE USER 
 // ============================================================================
-
 type UpdateUserRequest struct {
 	FullName *string `json:"full_name"`
-	AvatarURL *string `json:"avatar_url"`
 }
 
 type UpdateUserResponse struct {
-	FullName string `json:"full_name"`
-	AvatarURL *string `json:"avatar_url"`
+	FullName  string  `json:"full_name"`
 }
 
-// ===========================================================================
-// UPDATE USER PREFERENCES
-// ===========================================================================
+// ============================================================================
+// UPDATE AVATAR
+// ============================================================================
+
+type UpdateAvatarResponse struct {
+	AvatarURL string `json:"avatar_url"`
+}
+
+// ============================================================================
+// UPDATE PREFERENCES
+// ============================================================================
 
 type UpdateUserPreferencesRequest struct {
 	Preferences models.UserPreferences `json:"preferences"`

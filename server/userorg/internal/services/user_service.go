@@ -2,11 +2,15 @@ package services
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"time"
 
 	"github.com/google/uuid"
 
 	"userorg/internal/dto"
 	"userorg/internal/repository"
+	"userorg/internal/utils"
 
 	"shared/errors"
 	"shared/logger"
@@ -15,17 +19,23 @@ import (
 )
 
 type UserService struct {
-	userRepo *repository.UserRepository
-	log      *logger.Logger
+	userRepo    *repository.UserRepository
+	r2          *utils.R2Client
+	avatarQueue *utils.AvatarUploadQueue
+	log         *logger.Logger
 }
 
 func NewUserService(
 	userRepo *repository.UserRepository,
+	r2 *utils.R2Client,
+	avatarQueue *utils.AvatarUploadQueue,
 	log *logger.Logger,
 ) *UserService {
 	return &UserService{
-		userRepo: userRepo,
-		log:      log,
+		userRepo:    userRepo,
+		r2:          r2,
+		avatarQueue: avatarQueue,
+		log:         log,
 	}
 }
 
@@ -45,7 +55,7 @@ func (s *UserService) GetMe(ctx context.Context, userID uuid.UUID) (*dto.GetMeRe
 }
 
 // ============================================================================
-// UPDATE USER
+// UPDATE USER (full_name only via JSON)
 // ============================================================================
 
 func (s *UserService) UpdateUser(ctx context.Context, userID uuid.UUID, req *dto.UpdateUserRequest) (*dto.UpdateUserResponse, error) {
@@ -61,18 +71,53 @@ func (s *UserService) UpdateUser(ctx context.Context, userID uuid.UUID, req *dto
 		user.FullName = *req.FullName
 	}
 
-	if req.AvatarURL != nil {
-		user.AvatarURL = req.AvatarURL
-	}
-
-	if err := s.userRepo.Update(ctx, user); err != nil {
+	if err := s.userRepo.UpdateFullName(ctx, userID, *req.FullName); err != nil {
 		s.log.Error("Failed to update user", err, "user_id", userID)
 		return nil, errors.Internal(err)
 	}
 
 	return &dto.UpdateUserResponse{
-		FullName:  user.FullName,
-		AvatarURL: user.AvatarURL,
+		FullName:  *req.FullName,
+	}, nil
+}
+
+// ============================================================================
+// UPDATE AVATAR
+// ============================================================================
+
+// UpdateAvatar reads file bytes, saves pre-computed URL to DB, enqueues R2 upload.
+// URL is returned immediately — worker uploads to R2 in background.
+func (s *UserService) UpdateAvatar(ctx context.Context, userID uuid.UUID, file io.Reader, contentType string) (*dto.UpdateAvatarResponse, error) {
+	fileData, err := io.ReadAll(file)
+	if err != nil {
+		return nil, errors.Internal(fmt.Errorf("failed to read file: %w", err))
+	}
+
+	// Generate deterministic key & pre-compute public URL
+	ext := extensionFromContentType(contentType)
+	objectKey := fmt.Sprintf("avatars/%s/%d%s", userID.String(), time.Now().UnixMilli(), ext)
+	publicURL := s.r2.PublicURL(objectKey)
+
+	// Save URL to DB immediately (optimistic — worker will fulfil the upload)
+	if err := s.userRepo.UpdateAvatarURL(ctx, userID, publicURL); err != nil {
+		s.log.Error("Failed to save avatar URL", err, "user_id", userID)
+		return nil, errors.Internal(err)
+	}
+
+	// Enqueue background R2 upload
+	job := utils.AvatarUploadJob{
+		UserID:      userID,
+		ObjectKey:   objectKey,
+		FileData:    fileData,
+		ContentType: contentType,
+	}
+	if err := s.avatarQueue.Enqueue(ctx, job); err != nil {
+		s.log.Error("Failed to enqueue avatar upload", err, "user_id", userID)
+		// Non-fatal: URL saved, log and continue
+	}
+
+	return &dto.UpdateAvatarResponse{
+		AvatarURL: publicURL,
 	}, nil
 }
 
@@ -110,4 +155,11 @@ func validatePreferences(p models.UserPreferences) error {
 		}
 	}
 	return nil
+}
+
+func extensionFromContentType(ct string) string {
+	if ct == "image/png" {
+		return ".png"
+	}
+	return ".jpg"
 }

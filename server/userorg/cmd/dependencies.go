@@ -14,6 +14,7 @@ import (
 	"userorg/internal/redis"
 	"userorg/internal/repository"
 	"userorg/internal/services"
+	"userorg/internal/utils"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -41,11 +42,18 @@ type Dependencies struct {
 	// Managers
 	JWTManager *auth.TokenManager
 
+	// Utils
+	R2          *utils.R2Client
+	AvatarQueue *utils.AvatarUploadQueue
+
 	// Services
 	UserService *services.UserService
 
 	// Handlers
 	UserHandler *handlers.UserHandler
+
+	// Worker lifecycle
+	WorkerStop context.CancelFunc
 }
 
 // ============================================================================
@@ -99,15 +107,26 @@ func InitDependencies() (*Dependencies, error) {
 	jwtManager := auth.NewTokenManager(&cfg.JWT)
 	log.Info("✅ JWT Manager initialized")
 
-	// 6. Initialize Repositories
+	// 6. Initialize R2 Client
+	r2Client, err := utils.NewR2Client(&cfg.R2)
+	if err != nil {
+		return nil, fmt.Errorf("R2 client initialization error: %w", err)
+	}
+	log.Info("✅ R2 Client initialized")
+
+	// 7. Initialize Avatar Upload Queue
+	avatarQueue := utils.NewAvatarUploadQueue(redisClient.Client)
+	log.Info("✅ Avatar Upload Queue initialized")
+
+	// 8. Initialize Repositories
 	userRepo := repository.NewUserRepository(database)
 	log.Info("✅ Repositories initialized")
 
-	// 7. Initialize Services
-	userService := services.NewUserService(userRepo, log)
+	// 9. Initialize Services
+	userService := services.NewUserService(userRepo, r2Client, avatarQueue, log)
 	log.Info("✅ User Service initialized")
 
-	// 8. Initialize Handlers
+	// 10. Initialize Handlers
 	userHandler := handlers.NewUserHandler(userService, log)
 	log.Info("✅ Handlers initialized")
 
@@ -120,6 +139,8 @@ func InitDependencies() (*Dependencies, error) {
 		Logger:      log,
 		UserRepo:    userRepo,
 		JWTManager:  jwtManager,
+		R2:          r2Client,
+		AvatarQueue: avatarQueue,
 		UserService: userService,
 		UserHandler: userHandler,
 	}, nil
@@ -129,6 +150,11 @@ func InitDependencies() (*Dependencies, error) {
 func (d *Dependencies) Cleanup() error {
 	d.Logger.Info("🔌 Cleaning up resources...")
 	var lastErr error
+
+	if d.WorkerStop != nil {
+		d.WorkerStop()
+		d.Logger.Info("✅ Avatar worker stopped")
+	}
 
 	if d.Redis != nil {
 		if err := d.Redis.Close(); err != nil {
@@ -173,6 +199,11 @@ func main() {
 			deps.Logger.Error("Cleanup finished with errors", err)
 		}
 	}()
+
+	// Start background avatar upload worker
+	workerCtx, workerStop := context.WithCancel(context.Background())
+	deps.WorkerStop = workerStop
+	utils.StartAvatarWorker(workerCtx, deps.AvatarQueue, deps.R2, deps.UserRepo.UpdateAvatarURL)
 
 	app := fiber.New(fiber.Config{
 		AppName:               "Upnixo UserOrg Service",

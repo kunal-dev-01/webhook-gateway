@@ -19,6 +19,7 @@ type Config struct {
 	Security SecurityConfig
 	Frontend FrontendConfig
 	AWS      AWSConfig
+	R2       R2Config 
 	App      AppConfig
 	Logger   LoggerConfig
 }
@@ -137,6 +138,15 @@ type AppConfig struct {
 	EnableHealth  bool
 }
 
+
+type R2Config struct {
+	AccountID       string
+	AccessKeyID     string
+	SecretAccessKey string
+	Bucket          string
+	PublicURL       string // e.g. "https://cdn.yourdomain.com"
+}
+
 type LoggerConfig struct {
 	// Log Level
 	Level string // "trace", "debug", "info", "warn", "error", "fatal", "panic"
@@ -242,6 +252,13 @@ func Load() (*Config, error) {
 			AWSRegion:      getEnv("AWS_REGION", "eu-central-1"),
 			AWSSQSQueueURL: getEnv("AWS_SQS_QUEUE_URL", ""),
 			AWSFromEmail:   getEnv("AWS_FROM_EMAIL", ""),
+		},
+		R2: R2Config{
+			AccountID:       getEnv("R2_ACCOUNT_ID", ""),
+			AccessKeyID:     getEnv("R2_ACCESS_KEY_ID", ""),
+			SecretAccessKey: getEnv("R2_SECRET_ACCESS_KEY", ""),
+			Bucket:          getEnv("R2_BUCKET", ""),
+			PublicURL:       getEnv("R2_PUBLIC_URL", ""),
 		},
 		App: AppConfig{
 			Env:              getEnv("APP_ENV", "development"),

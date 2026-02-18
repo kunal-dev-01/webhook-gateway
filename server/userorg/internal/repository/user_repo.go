@@ -123,21 +123,23 @@ func (r *UserRepository) ExistsByEmail(ctx context.Context, email string) (bool,
 }
 
 // ============================================================================
-// UPDATE (Uses performUpdate helper for consistency)
+// UPDATE
 // ============================================================================
 
-func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
-	user.UpdatedAt = time.Now()
-	query := `
-		UPDATE users SET
-			full_name = $2, avatar_url = $3,
-			updated_at = $4
-		WHERE id = $1 AND deleted_at IS NULL`
-
-	return r.performUpdate(query, "update user", user.ID,
-		user.ID, user.FullName, user.AvatarURL, user.UpdatedAt)
+// UpdateFullName updates only the full_name field
+func (r *UserRepository) UpdateFullName(ctx context.Context, userID uuid.UUID, fullName string) error {
+	query := `UPDATE users SET full_name = $2, updated_at = $3 WHERE id = $1 AND deleted_at IS NULL`
+	return r.performUpdate(query, "update full name", userID, userID, fullName, time.Now())
 }
 
+// UpdateAvatarURL updates only the avatar_url field
+// Called by the avatar worker after successful R2 upload
+func (r *UserRepository) UpdateAvatarURL(ctx context.Context, userID uuid.UUID, url string) error {
+	query := `UPDATE users SET avatar_url = $2, updated_at = $3 WHERE id = $1 AND deleted_at IS NULL`
+	return r.performUpdate(query, "update avatar URL", userID, userID, url, time.Now())
+}
+
+// UpdatePreferences updates only the preferences JSONB field
 func (r *UserRepository) UpdatePreferences(ctx context.Context, userID uuid.UUID, preferences models.UserPreferences) error {
 	query := `UPDATE users SET preferences = $2, updated_at = $3 WHERE id = $1 AND deleted_at IS NULL`
 	return r.performUpdate(query, "update preferences", userID, userID, preferences, time.Now())
