@@ -12,11 +12,17 @@ import { ApiError } from "@/types/api.types";
 // ============================================================================
 
 export const useGetMe = () => {
+  const setUser = useAuthStore((s) => s.setUser);
   const query = useQuery({
     queryKey: ["users", "me"],
     queryFn: () => userService.getMe(),
-    staleTime: 5 * 60 * 1000, // 5 min
+    staleTime: 5 * 60 * 1000,
   });
+
+  // Update store when data is available
+  if (query.data?.user) {
+    setUser(query.data.user);
+  }
 
   return {
     user: query.data?.user,
