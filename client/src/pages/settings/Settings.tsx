@@ -1,4 +1,5 @@
-import ProfileSidePanel from "./ProfileSidePanel";
+import { PreferencesSection } from "./PreferencesSection";
+import { ProfileSidePanel } from "./ProfileSidePanel";
 import { SecuritySection } from "./SecuritySection";
 
 const Settings = () => {
@@ -21,14 +22,11 @@ const Settings = () => {
         {/* LEFT COLUMN: Sidebar */}
         <div className="lg:col-span-4 space-y-6 lg:sticky lg:top-8">
           <ProfileSidePanel />
-          {/* <CreditBalanceCard /> */}
         </div>
 
         <div className="lg:col-span-8 space-y-8">
           <SecuritySection />
-
-          {/* <PreferencesSection />
-          <NotificationsSection /> */}
+          <PreferencesSection />
         </div>
 
       </div>

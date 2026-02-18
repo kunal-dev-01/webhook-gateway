@@ -138,7 +138,6 @@ type AppConfig struct {
 	EnableHealth  bool
 }
 
-
 type R2Config struct {
 	AccountID       string
 	AccessKeyID     string
