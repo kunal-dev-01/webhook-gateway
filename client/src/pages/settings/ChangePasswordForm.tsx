@@ -85,6 +85,8 @@ export const ChangePasswordForm = () => {
         </div>
       </div>
 
+      <div className="w-full h-px bg-zinc-100 dark:bg-zinc-800/80 mb-6"></div>
+
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Current Password - Full Width */}

@@ -181,6 +181,7 @@ export const TwoFactorAuth = () => {
 
   return (
     <div className="max-w-3xl relative">
+
       <div className="flex items-start gap-4 mb-6">
         <div className={`p-3 rounded-xl hidden sm:block ${is2FAEnabled ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20" : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800"}`}>
           <Shield className="w-6 h-6" />
@@ -199,6 +200,8 @@ export const TwoFactorAuth = () => {
           </p>
         </div>
       </div>
+
+      <div className="w-full h-px bg-zinc-100 dark:bg-zinc-800/80 mb-6"></div>
 
       {/* ─────────────────────────── MAIN CARD ─────────────────────────── */}
       <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl p-6 border border-zinc-100 dark:border-zinc-800 mb-6">

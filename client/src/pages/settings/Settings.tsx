@@ -2,6 +2,7 @@ import { useGetMe } from "@/hooks/useUser";
 import { PreferencesSection } from "./PreferencesSection";
 import { ProfileSidePanel } from "./ProfileSidePanel";
 import { SecuritySection } from "./SecuritySection";
+import { SessionsSection } from "./SessionsSection";
 import { Loader } from "@/common/Loader";
 import { Error } from "@/svg/Common";
 
@@ -53,6 +54,7 @@ const Settings = () => {
         <div className="lg:col-span-8 space-y-8">
           <SecuritySection />
           <PreferencesSection />
+          <SessionsSection />
         </div>
 
       </div>
