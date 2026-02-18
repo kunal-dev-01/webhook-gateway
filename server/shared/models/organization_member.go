@@ -1,6 +1,7 @@
 package models
 
 import (
+	"slices"
 	"fmt"
 	"time"
 
@@ -71,13 +72,7 @@ func (m *OrganizationMember) Validate() error {
 	}
 	// Validate role
 	validRoles := []OrganizationMemberRole{RoleOwner, RoleAdmin, RoleMember, RoleViewer}
-	validRole := false
-	for _, vr := range validRoles {
-		if m.Role == vr {
-			validRole = true
-			break
-		}
-	}
+	validRole := slices.Contains(validRoles, m.Role)
 	if !validRole {
 		return fmt.Errorf("invalid role")
 	}

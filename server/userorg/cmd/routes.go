@@ -26,4 +26,12 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 	users.Patch("/me", deps.UserHandler.UpdateUser)
 	users.Put("/me/avatar", deps.UserHandler.UpdateAvatar)
 	users.Patch("/me/preferences", deps.UserHandler.UpdatePreferences)
+
+	// ── Organization routes ───────────────────────────────────────────────────
+	orgs := protected.Group("/user/organizations")
+	orgs.Get("/", deps.OrgHandler.ListMyOrganizations)
+	orgs.Get("/:org_id", deps.OrgHandler.GetOrganization)
+	orgs.Patch("/:org_id", deps.OrgHandler.UpdateName)
+	orgs.Get("/:org_id/members", deps.OrgHandler.ListMembers)
+	orgs.Delete("/:org_id/members/:user_id", deps.OrgHandler.RemoveMember)
 }

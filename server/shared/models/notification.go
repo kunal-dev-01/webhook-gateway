@@ -1,6 +1,7 @@
 package models
 
 import (
+	"slices"
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
@@ -240,13 +241,7 @@ func (n *Notification) Validate() error {
 		NotificationUsageLimitWarning,
 		NotificationUsageLimitExceeded,
 	}
-	validType := false
-	for _, vt := range validTypes {
-		if n.Type == vt {
-			validType = true
-			break
-		}
-	}
+	validType := slices.Contains(validTypes, n.Type)
 	if !validType {
 		return fmt.Errorf("invalid notification type")
 	}

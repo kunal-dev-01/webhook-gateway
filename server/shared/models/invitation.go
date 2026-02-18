@@ -1,6 +1,7 @@
 package models
 
 import (
+	"slices"
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
@@ -176,13 +177,7 @@ func (i *Invitation) Validate() error {
 	}
 	// Validate role (owner cannot be invited)
 	validRoles := []OrganizationMemberRole{RoleAdmin, RoleMember, RoleViewer}
-	validRole := false
-	for _, vr := range validRoles {
-		if i.Role == vr {
-			validRole = true
-			break
-		}
-	}
+	validRole := slices.Contains(validRoles, i.Role)
 	if !validRole {
 		return fmt.Errorf("invalid invitation role (owner cannot be invited)")
 	}

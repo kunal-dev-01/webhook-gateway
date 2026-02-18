@@ -38,6 +38,7 @@ type Dependencies struct {
 
 	// Repositories
 	UserRepo *repository.UserRepository
+	OrgRepo  *repository.OrganizationRepository
 
 	// Managers
 	JWTManager *auth.TokenManager
@@ -48,9 +49,11 @@ type Dependencies struct {
 
 	// Services
 	UserService *services.UserService
+	OrgService  *services.OrganizationService
 
 	// Handlers
 	UserHandler *handlers.UserHandler
+	OrgHandler  *handlers.OrganizationHandler
 
 	// Worker lifecycle
 	WorkerStop context.CancelFunc
@@ -120,15 +123,22 @@ func InitDependencies() (*Dependencies, error) {
 
 	// 8. Initialize Repositories
 	userRepo := repository.NewUserRepository(database)
+	orgRepo  := repository.NewOrganizationRepository(database)
 	log.Info("✅ Repositories initialized")
 
 	// 9. Initialize Services
 	userService := services.NewUserService(userRepo, r2Client, avatarQueue, log)
 	log.Info("✅ User Service initialized")
 
+	orgService := services.NewOrganizationService(orgRepo, log)
+	log.Info("✅ Organization Service initialized")
+
 	// 10. Initialize Handlers
 	userHandler := handlers.NewUserHandler(userService, log)
+	orgHandler  := handlers.NewOrganizationHandler(orgService, log)   
 	log.Info("✅ Handlers initialized")
+
+
 
 	log.Info("🎉 All dependencies initialized successfully")
 
@@ -137,12 +147,19 @@ func InitDependencies() (*Dependencies, error) {
 		DB:          database,
 		Redis:       redisClient,
 		Logger:      log,
+
 		UserRepo:    userRepo,
+		OrgRepo:     orgRepo,
+
 		JWTManager:  jwtManager,
 		R2:          r2Client,
 		AvatarQueue: avatarQueue,
+
 		UserService: userService,
+		OrgService:  orgService,
+
 		UserHandler: userHandler,
+		OrgHandler:  orgHandler,
 	}, nil
 }
 
