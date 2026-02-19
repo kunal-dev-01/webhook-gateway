@@ -5,6 +5,7 @@ import { Error } from "@/svg/Common";
 import { OrgGeneralSettings } from "./OrgGeneralSettings";
 import { OrgMembersList } from "./OrgMembersList";
 import { OrgUsageLimits } from "./OrgUsageLimits";
+import { OrgInvitationsList } from "./OrgInvitationsList";
 
 // 👈 Prop nikal diya, ab component parameters ke through id lega
 const OrganizationDetail = () => {
@@ -59,6 +60,7 @@ const OrganizationDetail = () => {
         {/* Right Column: Members Management */}
         <div className="lg:col-span-5 space-y-8 lg:sticky lg:top-8">
           <OrgMembersList orgId={organization.id} currentUserRole={organization.role} />
+          <OrgInvitationsList orgId={organization.id} currentUserRole={organization.role} />
         </div>
       </div>
     </div>
