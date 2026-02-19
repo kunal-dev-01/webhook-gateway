@@ -1,6 +1,6 @@
 import { Dashboard } from "@/svg/Auth";
 import { Settings } from "@/svg/Common";
-import { Bolt, Building } from "@/svg/More";
+import { Bolt, Building, Payment } from "@/svg/More";
 import { memo, useMemo, type FC } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 
@@ -60,6 +60,7 @@ const DashboardLayout: FC = () => {
     { label: "Dashboard", path: "/dashboard", icon: Dashboard },
     { label: "webhooks", path: "/webhooks", icon: Bolt },
     { label: "Organizations", path: "/organizations", icon: Building },
+    { label: "Billing", path: "/billing", icon: Payment },
     { label: "Settings", path: "/settings", icon: Settings },
   ], []);
 

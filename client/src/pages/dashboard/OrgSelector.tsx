@@ -8,7 +8,6 @@ interface OrgSelectorProps {
 }
 
 export const OrgSelector = ({ organizations, selectedOrgId, onSelect }: OrgSelectorProps) => {
-  // Selected organization data
   const selectedOrg = organizations.find((org) => org.id === selectedOrgId);
 
   if (organizations.length === 0) {
@@ -20,9 +19,11 @@ export const OrgSelector = ({ organizations, selectedOrgId, onSelect }: OrgSelec
   }
 
   return (
-    <div className="flex items-center gap-3 mb-10">
+    // FIX: Added 'w-full sm:w-auto' to container to handle mobile sizing
+    <div className="flex items-center gap-3 mb-10 w-full sm:w-auto">
+      
       {/* Custom Select Dropdown Container */}
-      <div className="relative w-64 group">
+      <div className="relative flex-1 sm:w-64 sm:flex-none group">
         <select
           value={selectedOrgId}
           onChange={(e) => onSelect(e.target.value)}
@@ -46,7 +47,6 @@ export const OrgSelector = ({ organizations, selectedOrgId, onSelect }: OrgSelec
           ))}
         </select>
         
-        {/* Custom Chevron Icon */}
         <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-zinc-400 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition-colors duration-200">
           <ChevronDown className="w-5 h-5" />
         </div>
@@ -54,14 +54,14 @@ export const OrgSelector = ({ organizations, selectedOrgId, onSelect }: OrgSelec
 
       {/* Question Mark Info Tooltip */}
       {selectedOrg && (
-        <div className="relative group/tooltip flex items-center justify-center">
-          <button className="text-zinc-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors duration-200 cursor-help p-2 outline-none border border-zinc-100 dark:border-zinc-800 rounded-full">
-            <QuestionMark className="w-6 h-6" />
+        <div className="relative group/tooltip flex items-center justify-center shrink-0">
+          <button className="text-zinc-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors duration-200 cursor-help p-2 outline-none border border-zinc-100 dark:border-zinc-800 rounded-full bg-white dark:bg-zinc-900/50">
+            <QuestionMark className="w-5 h-5" />
           </button>
           
           {/* Tooltip Card */}
-          <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-64 opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-200 z-50 transform translate-y-2 group-hover/tooltip:translate-y-0">
-            <div className="bg-white/50 dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800 rounded-2xl p-4">
+          <div className="absolute top-full mt-2 w-64 opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-200 z-50 transform translate-y-2 group-hover/tooltip:translate-y-0 right-0 sm:left-1/2 sm:-translate-x-1/2 sm:right-auto">
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl p-4 shadow-xl backdrop-blur-sm">
               <h4 className="text-sm font-bold text-zinc-900 dark:text-white border-b border-zinc-100 dark:border-zinc-700 pb-2 mb-2 truncate">
                 {selectedOrg.name} Details
               </h4>

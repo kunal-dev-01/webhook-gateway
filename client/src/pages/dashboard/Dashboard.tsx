@@ -2,13 +2,12 @@ import { useState, useEffect } from "react";
 import { useListOrganizations } from "@/hooks/useOrg";
 import { Loader } from "@/common/Loader";
 import { Bell, Error } from "@/svg/Common";
-import { OrgSelector } from "./OrgSelector"; // Path adjust kar lena
+import { OrgSelector } from "./OrgSelector"; 
 
 const Dashboard = () => {
   const { organizations, isLoading, isError } = useListOrganizations();
   const [selectedOrgId, setSelectedOrgId] = useState<string>("");
 
-  // Jaise hi organizations load ho, by default pehle wale ko select kar lo
   useEffect(() => {
     if (organizations.length > 0 && !selectedOrgId) {
       setSelectedOrgId(organizations[0].id);
@@ -17,7 +16,7 @@ const Dashboard = () => {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center min-h-[60vh]">
+      <div className="flex justify-center items-center min-h-[70vh]">
         <Loader className="w-8 h-8 text-indigo-500" />
       </div>
     );
@@ -25,7 +24,7 @@ const Dashboard = () => {
 
   if (isError) {
     return (
-      <div className="flex flex-col justify-center items-center gap-5 min-h-[60vh]">
+      <div className="flex flex-col justify-center items-center gap-5 min-h-[70vh]">
         <Error className="w-16 h-16 text-red-500" />
         <h1 className="text-2xl font-bold tracking-tight text-zinc-700 dark:text-white">
           Failed to load dashboard data.
@@ -48,8 +47,7 @@ const Dashboard = () => {
           </p>
         </div>
 
-        {/* Bell Notification Button */}
-        <button className="relative p-2.5 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer shadow-sm">
+        <button className="relative p-2.5 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer shadow-sm shrink-0">
           <Bell className="w-6 h-6" />
           <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-indigo-500 rounded-full border border-white dark:border-zinc-900"></span>
         </button>
