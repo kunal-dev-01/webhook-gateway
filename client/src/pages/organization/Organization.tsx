@@ -190,7 +190,7 @@ const OrgCard = ({ org }: { org: Organization }) => {
       {/* Manage Action */}
       <div className="pt-2 relative z-10">
         <button
-          onClick={() => navigate(`/organization/${org.id}`)}
+          onClick={() => navigate(`/organizations/${org.id}`)}
           className="group relative w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-transparent overflow-hidden cursor-pointer"
         >
           {/* Hover Scaling Background Div */}
