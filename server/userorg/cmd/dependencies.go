@@ -39,6 +39,8 @@ type Dependencies struct {
 	// Repositories
 	UserRepo *repository.UserRepository
 	OrgRepo  *repository.OrganizationRepository
+	InvitationRepo *repository.InvitationRepository
+	NotificationRepo *repository.NotificationRepository
 
 	// Managers
 	JWTManager *auth.TokenManager
@@ -50,10 +52,14 @@ type Dependencies struct {
 	// Services
 	UserService *services.UserService
 	OrgService  *services.OrganizationService
+	InvitationService *services.InvitationService
+	NotificationService *services.NotificationService
 
 	// Handlers
 	UserHandler *handlers.UserHandler
 	OrgHandler  *handlers.OrganizationHandler
+	InvitationHandler *handlers.InvitationHandler
+	NotificationHandler *handlers.NotificationHandler
 
 	// Worker lifecycle
 	WorkerStop context.CancelFunc
@@ -124,6 +130,8 @@ func InitDependencies() (*Dependencies, error) {
 	// 8. Initialize Repositories
 	userRepo := repository.NewUserRepository(database)
 	orgRepo  := repository.NewOrganizationRepository(database)
+	invitationRepo   := repository.NewInvitationRepository(database)
+	notificationRepo := repository.NewNotificationRepository(database)
 	log.Info("✅ Repositories initialized")
 
 	// 9. Initialize Services
@@ -133,9 +141,18 @@ func InitDependencies() (*Dependencies, error) {
 	orgService := services.NewOrganizationService(orgRepo, log)
 	log.Info("✅ Organization Service initialized")
 
+	invitationService := services.NewInvitationService(orgRepo, invitationRepo, notificationRepo, userRepo, log)
+	log.Info("✅ Invitation Service initialized")
+
+	notificationService := services.NewNotificationService(notificationRepo, log)
+	log.Info("✅ Notification Service initialized")
+	
+
 	// 10. Initialize Handlers
 	userHandler := handlers.NewUserHandler(userService, log)
-	orgHandler  := handlers.NewOrganizationHandler(orgService, log)   
+	orgHandler  := handlers.NewOrganizationHandler(orgService, log)  
+	invitationHandler := handlers.NewInvitationHandler(invitationService, log)
+	notificationHandler := handlers.NewNotificationHandler(notificationService, log) 
 	log.Info("✅ Handlers initialized")
 
 
@@ -150,6 +167,8 @@ func InitDependencies() (*Dependencies, error) {
 
 		UserRepo:    userRepo,
 		OrgRepo:     orgRepo,
+		InvitationRepo: invitationRepo,
+		NotificationRepo: notificationRepo,
 
 		JWTManager:  jwtManager,
 		R2:          r2Client,
@@ -157,9 +176,13 @@ func InitDependencies() (*Dependencies, error) {
 
 		UserService: userService,
 		OrgService:  orgService,
+		InvitationService: invitationService,
+		NotificationService: notificationService,
 
 		UserHandler: userHandler,
 		OrgHandler:  orgHandler,
+		InvitationHandler: invitationHandler,
+		NotificationHandler: notificationHandler,
 	}, nil
 }
 
