@@ -1,5 +1,6 @@
 import { Dashboard } from "@/svg/Auth";
-import { Bell, Settings } from "@/svg/Common";
+import { Settings } from "@/svg/Common";
+import { Bolt, Building } from "@/svg/More";
 import { memo, useMemo, type FC } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 
@@ -57,7 +58,8 @@ const DashboardLayout: FC = () => {
 
   const navItems = useMemo<NavItemConfig[]>(() => [
     { label: "Dashboard", path: "/dashboard", icon: Dashboard },
-    { label: "Notifications", path: "/notifications", icon: Bell },
+    { label: "webhooks", path: "/webhooks", icon: Bolt },
+    { label: "Organization", path: "/organization", icon: Building },
     { label: "Settings", path: "/settings", icon: Settings },
   ], []);
 

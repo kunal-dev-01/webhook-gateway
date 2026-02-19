@@ -16,11 +16,14 @@ const ResetPassword = lazy(() => import("./pages/auth/ResetPassword"));
 // DASHBOARD PAGES
 const Dashboard = lazy(() => import("./pages/dashboard/Dashboard"));
 
+// ORGANIZATION PAGES
+const Organization = lazy(() => import("./pages/organization/Organization"));
+
+// WEBHOOKS PAGES
+const Webhooks = lazy(() => import("./pages/webhooks/Webhooks"));
+
 // SETTINGS PAGES
 const Settings = lazy(() => import("./pages/settings/Settings"));
-
-// CREDITS PAGES
-const Notifications = lazy(() => import("./pages/notifications/Notifications"));
 
 // NOT FOUND
 const NotFound = lazy(() => import("./pages/notfound/NotFound"));
@@ -45,7 +48,8 @@ const App = () => {
 
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/notifications" element={<Notifications />} />
+          <Route path="/organization" element={<Organization />} />
+          <Route path="/webhooks" element={<Webhooks />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
 
