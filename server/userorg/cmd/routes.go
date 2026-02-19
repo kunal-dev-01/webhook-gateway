@@ -43,11 +43,11 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 	orgs.Delete("/:org_id/invitations/:invitation_id", deps.InvitationHandler.RevokeInvitation)
 
 	// ── Invitation accept (not org-scoped — user accepts via token) ───────────
-	invitations := protected.Group("/invitations")
+	invitations := protected.Group("/user/invitations")
 	invitations.Post("/accept", deps.InvitationHandler.AcceptInvitation)
 
 	// ── Notification routes ───────────────────────────────────────────────────
-	notifications := protected.Group("/notifications")
+	notifications := protected.Group("/user/notifications")
 	notifications.Get("/", deps.NotificationHandler.ListNotifications)
 	notifications.Get("/unread-count", deps.NotificationHandler.GetUnreadCount)
 	notifications.Patch("/read-all", deps.NotificationHandler.MarkAllRead)

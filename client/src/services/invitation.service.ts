@@ -35,7 +35,7 @@ export const invitationService = {
 
   // POST /invitations/accept
   acceptInvitation: async (data: AcceptInvitationRequest): Promise<AcceptInvitationResponse> => {
-    const response = await axiosClient.post("/invitations/accept", data);
+    const response = await axiosClient.post("/user/invitations/accept", data);
     return unwrapResponse<AcceptInvitationResponse>(response);
   },
 };
