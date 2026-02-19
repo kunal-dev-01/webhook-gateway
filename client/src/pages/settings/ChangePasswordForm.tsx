@@ -79,7 +79,7 @@ export const ChangePasswordForm = () => {
           <h2 className="text-xl font-bold text-zinc-900 dark:text-white">
             Change Password
           </h2>
-          <p className="text-sm text-zinc-500 mt-1">
+          <p className="text-sm text-zinc-500">
             Ensure your account is using a long, random password to stay secure.
           </p>
         </div>

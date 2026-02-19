@@ -18,6 +18,7 @@ const Dashboard = lazy(() => import("./pages/dashboard/Dashboard"));
 
 // ORGANIZATION PAGES
 const Organization = lazy(() => import("./pages/organization/Organization"));
+const OrganizationDetail = lazy(() => import("./pages/organization/OrganizationDetail"));
 
 // WEBHOOKS PAGES
 const Webhooks = lazy(() => import("./pages/webhooks/Webhooks"));
@@ -48,7 +49,8 @@ const App = () => {
 
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/organization" element={<Organization />} />
+          <Route path="/organizations" element={<Organization />} />
+          <Route path="/organizations/:orgId" element={<OrganizationDetail />} />
           <Route path="/webhooks" element={<Webhooks />} />
           <Route path="/settings" element={<Settings />} />
         </Route>

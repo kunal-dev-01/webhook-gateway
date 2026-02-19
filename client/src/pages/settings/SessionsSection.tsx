@@ -65,7 +65,7 @@ export const SessionsSection = () => {
           <h2 className="text-xl font-bold text-zinc-900 dark:text-white">
             Active Sessions
           </h2>
-          <p className="text-sm text-zinc-500 mt-1 max-w-xl">
+          <p className="text-sm text-zinc-500 max-w-xl">
             Review the devices currently logged into your account. If you see any unfamiliar activity, you can terminate the session immediately to protect your account.
           </p>
         </div>

@@ -195,7 +195,7 @@ export const TwoFactorAuth = () => {
               </span>
             )}
           </h2>
-          <p className="text-sm text-zinc-500 mt-1">
+          <p className="text-sm text-zinc-500">
             Secure your account with TOTP (Google Authenticator, Authy).
           </p>
         </div>

@@ -51,7 +51,7 @@ export const PreferencesSection = () => {
           <h2 className="text-xl font-bold text-zinc-900 dark:text-white">
             Preferences
           </h2>
-          <p className="text-sm text-zinc-500 mt-1">
+          <p className="text-sm text-zinc-500">
             Customize your interface and notification settings.
           </p>
         </div>

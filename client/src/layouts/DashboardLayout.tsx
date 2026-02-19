@@ -59,7 +59,7 @@ const DashboardLayout: FC = () => {
   const navItems = useMemo<NavItemConfig[]>(() => [
     { label: "Dashboard", path: "/dashboard", icon: Dashboard },
     { label: "webhooks", path: "/webhooks", icon: Bolt },
-    { label: "Organization", path: "/organization", icon: Building },
+    { label: "Organizations", path: "/organizations", icon: Building },
     { label: "Settings", path: "/settings", icon: Settings },
   ], []);
 
