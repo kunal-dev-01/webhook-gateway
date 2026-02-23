@@ -3,6 +3,7 @@ package handlers
 import (
 	"authentication/internal/dto"
 	"authentication/internal/services"
+	"authentication/internal/utils"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -13,13 +14,15 @@ import (
 
 type SessionHandler struct {
 	sessionService *services.SessionService
-	log         *logger.Logger
+	sessionMgr     *utils.Manager
+	log            *logger.Logger
 }
 
-func NewSessionHandler(sessionService *services.SessionService, log *logger.Logger) *SessionHandler {
+func NewSessionHandler(sessionService *services.SessionService, log *logger.Logger, sessionMgr *utils.Manager) *SessionHandler {
 	return &SessionHandler{
 		sessionService: sessionService,
-		log:         log,
+		sessionMgr:     sessionMgr,
+		log:            log,
 	}
 }
 
@@ -88,14 +91,38 @@ func (h *SessionHandler) GetActiveSessions(c *fiber.Ctx) error {
 		return errors.Unauthorized("Unauthorized")
 	}
 
-	sessions, err := h.sessionService.GetActiveSessions(c.Context(), userID)
+	// 1. Current session ID nikal lo
+	currentSessionID, err := middleware.GetSessionID(c)
+	if err != nil {
+		return errors.Unauthorized("Unauthorized")
+	}
+
+	// 2. Database se saare sessions le aao
+	allSessions, err := h.sessionService.GetActiveSessions(c.Context(), userID)
 	if err != nil {
 		return err
 	}
 
+	// 3. Current session ko filter out kar do
+	var filteredSessions []utils.SessionData // ✅ Package name 'utils' use karein
+	for _, session := range allSessions {
+		// Sirf wo session add karo jo current nahi hain
+		if session.SessionID != currentSessionID {
+			filteredSessions = append(filteredSessions, session)
+		}
+	}
+
+	// Agar nil slice ban jaye (sirf current session hi tha), toh empty array return karo
+	if filteredSessions == nil {
+		filteredSessions = []utils.SessionData{} // ✅ Yahan bhi 'utils' aayega
+	}
+
 	return c.JSON(fiber.Map{
 		"success": true,
-		"data":    sessions,
+		"data": fiber.Map{
+			"sessions": filteredSessions,
+			"total":    len(filteredSessions), // Ab count bhi filtered ka jayega
+		},
 	})
 }
 

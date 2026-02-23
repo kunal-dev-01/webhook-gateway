@@ -70,7 +70,6 @@ export const SessionsSection = () => {
           </p>
         </div>
       </div>
-
       <div className="w-full h-px bg-zinc-100 dark:bg-zinc-800/80 mb-6"></div>
 
       {/* BEFORE CLICK: Information & Trigger Button */}

@@ -202,7 +202,7 @@ func InitDependencies() (*Dependencies, error) {
 	loginHandler := handlers.NewLoginHandler(loginService, log)
 	twoFactorHandler := handlers.NewTwoFactorHandler(twoFactorService, log)
 	passwordHandler := handlers.NewPasswordHandler(passwordService, log)
-	sessionHandler := handlers.NewSessionHandler(sessionService, log)
+	sessionHandler := handlers.NewSessionHandler(sessionService, log, sessionManager)
 	log.Info("✅ Handlers initialized")
 
 	log.Info("🎉 All dependencies initialized successfully")

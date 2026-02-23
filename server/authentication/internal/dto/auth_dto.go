@@ -31,6 +31,8 @@ type RegisterResponse struct {
 type LoginRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required"`
+	IPAddress string `json:"-"`
+    UserAgent string `json:"-"`
 }
 
 type LoginResponse struct {
@@ -68,7 +70,9 @@ type SelectOrganizationResponse struct {
 type TwoFactorVerifyRequest struct {
 	TempToken  string `json:"temp_token" validate:"required"`
 	Code       string `json:"code" validate:"required,len=6"` // TOTP code
-	IsRecovery bool   `json:"is_recovery"`                    // true if using backup code
+	IsRecovery bool   `json:"is_recovery"` 
+	IPAddress string `json:"-"`
+    UserAgent string `json:"-"`
 }
 
 type TwoFactorVerifyResponse struct {

@@ -33,6 +33,9 @@ func (h *LoginHandler) Login(c *fiber.Ctx) error {
         return errors.BadRequest("Invalid request body")
     }
 
+    req.IPAddress = c.IP()
+    req.UserAgent = c.Get("User-Agent")
+
     resp, err := h.loginService.Login(c.Context(), &req)
     if err != nil {
         return err
@@ -68,6 +71,9 @@ func (h *LoginHandler) Verify2FA(c *fiber.Ctx) error {
     if err := c.BodyParser(&req); err != nil {
         return errors.BadRequest("Invalid request body")
     }
+
+    req.IPAddress = c.IP()
+    req.UserAgent = c.Get("User-Agent")
 
     resp, err := h.loginService.Verify2FA(c.Context(), &req)
     if err != nil {

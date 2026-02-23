@@ -147,9 +147,9 @@ func (s *LoginService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.L
 		OrganizationID: primaryOrg.ID,
 		OrgRole:        string(membership.Role),
 		SessionID:      tokenPair.SessionID,
-		DeviceInfo:     "", // Will be set by handler
-		IPAddress:      "", // Will be set by handler
-		UserAgent:      "", // Will be set by handler
+		DeviceInfo:     utils.ParseDeviceInfo(req.UserAgent),
+		IPAddress:      req.IPAddress, 
+        UserAgent:      req.UserAgent,
 		CreatedAt:      time.Now(),
 		LastActivity:   time.Now(),
 	}); err != nil {
@@ -302,9 +302,9 @@ func (s *LoginService) Verify2FA(ctx context.Context, req *dto.TwoFactorVerifyRe
 		OrganizationID: primaryOrg.ID,
 		OrgRole:        string(membership.Role),
 		SessionID:      tokenPair.SessionID,
-		DeviceInfo:     "", // Will be set by handler
-		IPAddress:      "", // Will be set by handler
-		UserAgent:      "", // Will be set by handler
+		DeviceInfo:     utils.ParseDeviceInfo(req.UserAgent),
+        IPAddress:      req.IPAddress,   
+        UserAgent:      req.UserAgent,
 		CreatedAt:      time.Now(),
 		LastActivity:   time.Now(),
 	}); err != nil {
