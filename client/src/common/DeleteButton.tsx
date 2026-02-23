@@ -18,17 +18,24 @@ export default function DeleteButton({
       disabled={loading || rest.disabled}
       {...rest}
       className={`
-        group relative overflow-hidden
-        w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-70 disabled:pointer-events-none cursor-pointer
+        relative overflow-hidden group
+        w-full flex items-center justify-center gap-2
+        py-2.5 px-4 rounded-2xl cursor-pointer
+        bg-red-600 text-white font-medium text-[15px] tracking-wide
+        border border-transparent
+        transition-colors duration-200 ease-in-out
+        hover:bg-red-700
+        focus:outline-none
+        disabled:opacity-60 disabled:cursor-not-allowed
         ${className}
       `}
     >
-      {/* Shine Effect Element */}
-      <div className="absolute top-0 -left-full w-full h-full bg-linear-to-r from-transparent via-white/25 to-transparent skew-x-[-20deg] group-hover:left-full transition-[left] duration-1000 ease-in-out" />
+
+      <div className="absolute inset-0 -translate-x-[150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out bg-linear-to-r from-transparent via-white/15 to-transparent skew-x-[-25deg]" />
 
       {/* Content Wrapper */}
       <span className="relative z-10 flex items-center gap-2">
-        {loading && <Loader className='w-5 h-5 text-white' />}
+        {loading && <Loader className="w-5 h-5 text-white/90" />}
         {children}
       </span>
     </button>

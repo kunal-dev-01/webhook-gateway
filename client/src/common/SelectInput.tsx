@@ -52,7 +52,7 @@ const SelectInput = ({
         type="button"
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
-        className={`w-full flex items-center justify-between p-2.5 border-2 rounded-xl transition-all duration-200 outline-none ${
+        className={`w-full flex items-center justify-between p-2 border rounded-xl transition-all duration-200 outline-none ${
           isOpen
             ? "dark:border-indigo-500 border-indigo-400"
             : "border-zinc-200 dark:border-zinc-800 hover:border-indigo-400 dark:hover:border-indigo-500"
@@ -70,7 +70,7 @@ const SelectInput = ({
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute z-50 w-full mt-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+        <div className="absolute z-50 w-full mt-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl overflow-hidden  duration-100">
           <ul className="max-h-60 overflow-auto py-1">
             {options.map((option) => (
               <li key={option.value}>

@@ -4,10 +4,18 @@ import { useAuthStore } from "@/store/auth.store";
 import { useUpdatePreferences } from "@/hooks/useUser";
 import SubmitButton from "@/common/SubmitButton";
 import { Switch } from "@/common/Switch"; // Aapka naya reusable component
-import { Bell, ChevronDown } from "@/svg/Common";
+import { Bell } from "@/svg/Common";
 import { DotPattern, Globe, Monitor, Moon, Sun, Theme } from "@/svg/Auth";
+import SelectInput from "@/common/SelectInput";
 
 export const PreferencesSection = () => {
+  const timezoneOptions = [
+    { label: "UTC (Universal Time)", value: "UTC" },
+    { label: "IST (Indian Standard Time)", value: "Asia/Kolkata" },
+    { label: "EST (Eastern Standard Time)", value: "America/New_York" },
+    { label: "GMT (Greenwich Mean Time)", value: "Europe/London" },
+  ];
+
   const user = useAuthStore((state) => state.user);
   const { updatePreferences, isPending } = useUpdatePreferences();
 
@@ -42,7 +50,7 @@ export const PreferencesSection = () => {
   if (!user) return null;
 
   return (
-    <section className="bg-white dark:bg-zinc-900/70 border border-zinc-200 dark:border-zinc-800 rounded-4xl p-6 md:p-8 space-y-8 relative overflow-hidden">
+    <section className="bg-white dark:bg-zinc-900/70 border border-zinc-200 dark:border-zinc-800 rounded-4xl p-6 md:p-8 space-y-8 relative">
       <div className="flex items-start gap-4 mb-6">
         <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl hidden sm:block">
           <Theme className="w-6 h-6 text-zinc-500" />
@@ -274,35 +282,20 @@ export const PreferencesSection = () => {
 
           {/* Timezone Dropdown */}
           <div className="flex items-center justify-between p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
-            <div className="flex gap-3 items-center w-full">
+            <div className="flex gap-4 items-center w-full">
+              {/* Globe Icon */}
               <div className="w-10 h-10 rounded-full bg-white dark:bg-zinc-800 flex items-center justify-center border border-zinc-200 dark:border-zinc-700 shrink-0 shadow-xs">
                 <Globe className="w-5 h-5 text-zinc-600 dark:text-zinc-300" />
               </div>
-              <div className="flex-1">
-                <h4 className="font-medium text-sm text-zinc-900 dark:text-zinc-100">
-                  Timezone
-                </h4>
-                <div className="mt-1 relative w-full">
-                  <select
-                    value={timezone}
-                    onChange={(e) => setTimezone(e.target.value)}
-                    className="block w-full appearance-none rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-1.5 text-sm text-zinc-900 dark:text-white focus:outline-none pr-8 cursor-pointer"
-                  >
-                    <option value="UTC">UTC (Universal Time)</option>
-                    <option value="Asia/Kolkata">
-                      IST (Indian Standard Time)
-                    </option>
-                    <option value="America/New_York">
-                      EST (Eastern Standard Time)
-                    </option>
-                    <option value="Europe/London">
-                      GMT (Greenwich Mean Time)
-                    </option>
-                  </select>
-                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-zinc-500">
-                    <ChevronDown className="w-4 h-4" aria-hidden="true" />
-                  </div>
-                </div>
+
+              {/* Custom Dropdown */}
+              <div className="flex-1 w-full">
+                <SelectInput
+                  label="Timezone"
+                  options={timezoneOptions}
+                  value={timezone}
+                  onChange={(val) => setTimezone(val)}
+                />
               </div>
             </div>
           </div>
@@ -325,5 +318,3 @@ export const PreferencesSection = () => {
     </section>
   );
 };
-
-

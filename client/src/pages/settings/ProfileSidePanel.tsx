@@ -191,7 +191,7 @@ export const ProfileSidePanel = () => {
             {/* Hover overlay for changing avatar */}
             {!isUpdatingAvatar && (
               <div className="absolute inset-0 bg-black/40 flex items-center justify-center lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-200">
-                <Camera className="w-6 h-6 dark:text-zinc-300 text-zinc-700" />
+                <Camera className="w-6 h-6 text-zinc-300" />
               </div>
             )}
 
