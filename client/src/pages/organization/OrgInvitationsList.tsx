@@ -1,14 +1,15 @@
 import { z } from "zod";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form"; // Controller add kiya
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { useListInvitations, useInviteMember, useRevokeInvitation } from "@/hooks/useInvitation";
 import { type OrgMemberRole } from "@/types/org.types";
 import { Loader } from "@/common/Loader";
-import { Error, Mail, ChevronDown, Trash } from "@/svg/Common"; 
+import { Error, Mail, Trash } from "@/svg/Common"; 
 import AuthInput from "@/common/AuthInput";
 import SubmitButton from "@/common/SubmitButton";
 import DeleteButton from "@/common/DeleteButton";
+import SelectInput from "@/common/SelectInput"; // Aapka custom select
 
 const inviteSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -16,6 +17,12 @@ const inviteSchema = z.object({
 });
 
 type InviteFormValues = z.infer<typeof inviteSchema>;
+
+const ROLE_OPTIONS = [
+  { label: "Admin", value: "admin" },
+  { label: "Member", value: "member" },
+  { label: "Viewer", value: "viewer" },
+];
 
 export const OrgInvitationsList = ({
   orgId,
@@ -34,13 +41,18 @@ export const OrgInvitationsList = ({
     register,
     handleSubmit,
     reset,
+    control, 
+    watch,
     formState: { errors },
   } = useForm<InviteFormValues>({
     resolver: zodResolver(inviteSchema),
     defaultValues: {
+      email: "",
       role: "member",
     },
   });
+
+  const emailValue = watch("email");
 
   const onSubmit = async (data: InviteFormValues) => {
     try {
@@ -77,10 +89,9 @@ export const OrgInvitationsList = ({
 
       <div className="w-full h-px bg-zinc-100 dark:bg-zinc-800/80 mb-8"></div>
 
-      {/* INVITATION FORM - VERTICAL LAYOUT */}
+      {/* INVITATION FORM */}
       {canManage && (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 mb-10">
-          {/* 1. Email Input */}
           <div className="w-full">
             <AuthInput
               label="Email Address"
@@ -93,33 +104,29 @@ export const OrgInvitationsList = ({
             />
           </div>
 
-          {/* 2. Role Dropdown with Chevron */}
+          {/* CUSTOM SELECT INTEGRATION */}
           <div className="w-full">
-            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-200 mb-1.5 ml-1">
-              Select Role
-            </label>
-            <div className="relative">
-              <select
-                {...register("role")}
-                disabled={isInviting}
-                className="w-full appearance-none px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 text-zinc-900 dark:text-white text-sm outline-none cursor-pointer "
-              >
-                <option value="admin">Admin</option>
-                <option value="member">Member</option>
-                <option value="viewer">Viewer</option>
-              </select>
-              <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none">
-                <ChevronDown className="w-5 h-5 text-zinc-400" />
-              </div>
-            </div>
+            <Controller
+              name="role"
+              control={control}
+              render={({ field }) => (
+                <SelectInput
+                  label="Select Role"
+                  options={ROLE_OPTIONS}
+                  value={field.value}
+                  onChange={field.onChange} 
+                  disabled={isInviting}
+                  className="w-full p-3"
+                />
+              )}
+            />
             {errors.role && (
               <p className="text-xs text-red-500 mt-1.5 ml-1">{errors.role.message}</p>
             )}
           </div>
 
-          {/* 3. Submit Button */}
           <div className="pt-2">
-            <SubmitButton loading={isInviting} disabled={isInviting} className="w-full py-3">
+            <SubmitButton loading={isInviting} disabled={isInviting || !emailValue || !!errors.email}>
               {isInviting ? "Sending..." : "Send Invitation"}
             </SubmitButton>
           </div>
@@ -170,15 +177,13 @@ export const OrgInvitationsList = ({
                 </div>
 
                 {canManage && invite.status === "pending" && (
-                  <div className="inline-block rounded-full overflow-hidden">
-                    <DeleteButton
+                  <DeleteButton
                     loading={isRevoking}
                     onClick={() => handleRevoke(invite.id)}
-                    className="px-6"
+                    className="w-10 h-10 flex items-center justify-center"
                   >
-                    <Trash className="w-5 h-5" />
+                    <Trash className="w-4 h-4" />
                   </DeleteButton>
-                  </div>
                 )}
               </div>
             ))}

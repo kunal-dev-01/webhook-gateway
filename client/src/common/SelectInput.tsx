@@ -13,6 +13,7 @@ interface SelectInputProps {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  className?: string;
 }
 
 const SelectInput = ({
@@ -21,6 +22,7 @@ const SelectInput = ({
   value,
   onChange,
   disabled,
+  className,
 }: SelectInputProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -56,13 +58,13 @@ const SelectInput = ({
           isOpen
             ? "dark:border-indigo-500 border-indigo-400"
             : "border-zinc-200 dark:border-zinc-800 hover:border-indigo-400 dark:hover:border-indigo-500"
-        } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+        } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${className}`}
       >
         <span className="text-sm font-medium text-zinc-900 dark:text-white">
           {selectedLabel || "Select Option"}
         </span>
         <ChevronDown
-          className={`w-4 h-4 text-zinc-500 transition-transform duration-200 ${
+          className={`w-5 h-5 text-zinc-500 transition-transform duration-200 ${
             isOpen ? "rotate-180" : ""
           }`}
         />

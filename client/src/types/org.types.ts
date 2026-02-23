@@ -41,6 +41,9 @@ export interface OrgMember {
   invited_by?: string;
   invitation_accepted_at?: string;
   joined_at: string;
+  full_name: string;
+  email: string;
+  avatar_url?: string;
 }
 
 // ============================================================================
