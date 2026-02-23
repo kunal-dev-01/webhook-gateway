@@ -285,7 +285,7 @@ func (s *InvitationService) AcceptInvitation(
 	s.log.Info("Invitation accepted", "invitation_id", inv.ID, "user_id", callerID, "org_id", inv.OrganizationID)
 	return &dto.AcceptInvitationResponse{
 		Organization: dto.ToOrganizationResponse(org, string(member.Role)),
-		Member:       dto.ToMemberResponse(member),
+		Member:       dto.ToMemberResponse(member,callerUser.FullName,callerUser.Email,callerUser.AvatarURL),
 	}, nil
 }
 

@@ -38,6 +38,9 @@ type MemberResponse struct {
 	InvitedBy            *uuid.UUID                     `json:"invited_by,omitempty"`
 	InvitationAcceptedAt *time.Time                     `json:"invitation_accepted_at,omitempty"`
 	JoinedAt             time.Time                      `json:"joined_at"`
+	FullName  string  `json:"full_name"`
+    Email     string  `json:"email"`
+    AvatarURL *string `json:"avatar_url,omitempty"`
 }
 
 // ============================================================================
@@ -93,7 +96,7 @@ func ToOrganizationResponse(org *models.Organization, userRole string) *Organiza
 	}
 }
 
-func ToMemberResponse(m *models.OrganizationMember) *MemberResponse {
+func ToMemberResponse(m *models.OrganizationMember, fullName, email string, avatarURL *string) *MemberResponse {
 	return &MemberResponse{
 		ID:                   m.ID,
 		OrganizationID:       m.OrganizationID,
@@ -102,5 +105,8 @@ func ToMemberResponse(m *models.OrganizationMember) *MemberResponse {
 		InvitedBy:            m.InvitedBy,
 		InvitationAcceptedAt: m.InvitationAcceptedAt,
 		JoinedAt:             m.CreatedAt,
+		FullName:             fullName,
+		Email:                email,
+		AvatarURL:            avatarURL,
 	}
 }

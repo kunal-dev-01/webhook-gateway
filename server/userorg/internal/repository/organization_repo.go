@@ -16,6 +16,12 @@ import (
 // ============================================================================
 // Organization Repository
 // ============================================================================
+type MemberWithUser struct {
+    models.OrganizationMember
+    FullName  string
+    Email     string
+    AvatarURL *string
+}
 
 type OrganizationRepository struct {
 	db *db.DB
@@ -369,39 +375,50 @@ func (r *OrganizationRepository) ExistsMembership(ctx context.Context, orgID, us
 	return exists, nil
 }
 
-func (r *OrganizationRepository) ListMembers(ctx context.Context, orgID uuid.UUID, limit, offset int) ([]*models.OrganizationMember, int, error) {
-	var total int
-	if err := r.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM organization_members WHERE organization_id = $1 AND deleted_at IS NULL`,
-		orgID,
-	).Scan(&total); err != nil {
-		logger.Error("Failed to count members", err, "org_id", orgID)
-		return nil, 0, errors.Internal(err)
-	}
+func (r *OrganizationRepository) ListMembers(ctx context.Context, orgID uuid.UUID, limit, offset int) ([]*MemberWithUser, int, error) {
+    var total int
+    if err := r.db.QueryRow(ctx,
+        `SELECT COUNT(*) FROM organization_members WHERE organization_id = $1 AND deleted_at IS NULL`,
+        orgID,
+    ).Scan(&total); err != nil {
+        logger.Error("Failed to count members", err, "org_id", orgID)
+        return nil, 0, errors.Internal(err)
+    }
 
-	query := `
-		SELECT id, organization_id, user_id, role, invited_by, invitation_accepted_at, deleted_at, created_at, updated_at
-		FROM organization_members
-		WHERE organization_id = $1 AND deleted_at IS NULL
-		ORDER BY created_at ASC LIMIT $2 OFFSET $3`
+    query := `
+        SELECT 
+            om.id, om.organization_id, om.user_id, om.role,
+            om.invited_by, om.invitation_accepted_at,
+            om.deleted_at, om.created_at, om.updated_at,
+            u.full_name, u.email, u.avatar_url
+        FROM organization_members om
+        INNER JOIN users u ON u.id = om.user_id AND u.deleted_at IS NULL
+        WHERE om.organization_id = $1 AND om.deleted_at IS NULL
+        ORDER BY om.created_at ASC LIMIT $2 OFFSET $3`
 
-	rows, err := r.db.Query(ctx, query, orgID, limit, offset)
-	if err != nil {
-		logger.Error("Failed to list members", err, "org_id", orgID)
-		return nil, 0, errors.Internal(err)
-	}
-	defer rows.Close()
+    rows, err := r.db.Query(ctx, query, orgID, limit, offset)
+    if err != nil {
+        logger.Error("Failed to list members", err, "org_id", orgID)
+        return nil, 0, errors.Internal(err)
+    }
+    defer rows.Close()
 
-	var members []*models.OrganizationMember
-	for rows.Next() {
-		member, err := r.scanMember(rows)
-		if err != nil {
-			logger.Error("Failed to scan member", err)
-			return nil, 0, errors.Internal(err)
-		}
-		members = append(members, member)
-	}
-	return members, total, rows.Err()
+    var members []*MemberWithUser
+    for rows.Next() {
+        m := &MemberWithUser{}
+        err := rows.Scan(
+            &m.ID, &m.OrganizationID, &m.UserID, &m.Role,
+            &m.InvitedBy, &m.InvitationAcceptedAt,
+            &m.DeletedAt, &m.CreatedAt, &m.UpdatedAt,
+            &m.FullName, &m.Email, &m.AvatarURL,
+        )
+        if err != nil {
+            logger.Error("Failed to scan member with user", err)
+            return nil, 0, errors.Internal(err)
+        }
+        members = append(members, m)
+    }
+    return members, total, rows.Err()
 }
 
 func (r *OrganizationRepository) GetMemberCount(ctx context.Context, orgID uuid.UUID) (int, error) {

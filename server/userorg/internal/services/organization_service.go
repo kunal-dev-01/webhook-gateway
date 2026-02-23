@@ -16,15 +16,18 @@ import (
 
 type OrganizationService struct {
 	orgRepo *repository.OrganizationRepository
+	userRepo *repository.UserRepository
 	log     *logger.Logger
 }
 
 func NewOrganizationService(
 	orgRepo *repository.OrganizationRepository,
+	userRepo *repository.UserRepository,
 	log *logger.Logger,
 ) *OrganizationService {
 	return &OrganizationService{
 		orgRepo: orgRepo,
+		userRepo: userRepo,
 		log:     log,
 	}
 }
@@ -115,34 +118,34 @@ func (s *OrganizationService) UpdateName(ctx context.Context, orgID, userID uuid
 // ============================================================================
 
 func (s *OrganizationService) ListMembers(ctx context.Context, orgID, userID uuid.UUID, req *dto.ListMembersRequest) (*dto.ListMembersResponse, error) {
-	// Verify caller is a member
-	if _, err := s.orgRepo.GetMembership(ctx, orgID, userID); err != nil {
-		return nil, errors.Forbidden("You are not a member of this organization")
-	}
+    if _, err := s.orgRepo.GetMembership(ctx, orgID, userID); err != nil {
+        return nil, errors.Forbidden("You are not a member of this organization")
+    }
 
-	limit := req.Limit
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
-	offset := max(req.Offset, 0)
+    limit := req.Limit
+    if limit <= 0 || limit > 100 {
+        limit = 20
+    }
+    offset := max(req.Offset, 0)
 
-	members, total, err := s.orgRepo.ListMembers(ctx, orgID, limit, offset)
-	if err != nil {
-		s.log.Error("Failed to list members", err, "org_id", orgID)
-		return nil, err
-	}
+    members, total, err := s.orgRepo.ListMembers(ctx, orgID, limit, offset)
+    if err != nil {
+        s.log.Error("Failed to list members", err, "org_id", orgID)
+        return nil, err
+    }
 
-	responses := make([]*dto.MemberResponse, 0, len(members))
-	for _, m := range members {
-		responses = append(responses, dto.ToMemberResponse(m))
-	}
+    responses := make([]*dto.MemberResponse, 0, len(members))
+    for _, m := range members {
+        // ✅ Ab user info bhi pass ho rahi hai
+        responses = append(responses, dto.ToMemberResponse(&m.OrganizationMember, m.FullName, m.Email, m.AvatarURL))
+    }
 
-	return &dto.ListMembersResponse{
-		Members: responses,
-		Total:   total,
-		Limit:   limit,
-		Offset:  offset,
-	}, nil
+    return &dto.ListMembersResponse{
+        Members: responses,
+        Total:   total,
+        Limit:   limit,
+        Offset:  offset,
+    }, nil
 }
 
 // ============================================================================
@@ -181,15 +184,16 @@ func (s *OrganizationService) UpdateMemberRole(ctx context.Context, orgID, calle
 		return nil, errors.Forbidden("Owner role cannot be changed. Use transfer ownership")
 	}
 
-	if err := s.orgRepo.UpdateMemberRole(ctx, orgID, targetUserID, newRole); err != nil {
-		s.log.Error("Failed to update member role", err, "org_id", orgID, "target_user_id", targetUserID)
-		return nil, err
-	}
+	// ✅ Target user fetch karo response ke liye
+    targetUser, err := s.userRepo.GetByID(ctx, targetUserID)
+    if err != nil {
+        return nil, err
+    }
 
-	s.log.Info("Member role updated", "org_id", orgID, "updated_by", callerID, "target_user", targetUserID, "new_role", newRole)
+    s.log.Info("Member role updated", "org_id", orgID, "updated_by", callerID, "target_user", targetUserID, "new_role", newRole)
 
-	targetMember.Role = newRole
-	return dto.ToMemberResponse(targetMember), nil
+    targetMember.Role = newRole
+    return dto.ToMemberResponse(targetMember, targetUser.FullName, targetUser.Email, targetUser.AvatarURL), nil
 }
 
 // ============================================================================

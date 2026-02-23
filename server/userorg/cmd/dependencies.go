@@ -138,7 +138,7 @@ func InitDependencies() (*Dependencies, error) {
 	userService := services.NewUserService(userRepo, r2Client, avatarQueue, log)
 	log.Info("✅ User Service initialized")
 
-	orgService := services.NewOrganizationService(orgRepo, log)
+	orgService := services.NewOrganizationService(orgRepo, userRepo, log)
 	log.Info("✅ Organization Service initialized")
 
 	invitationService := services.NewInvitationService(orgRepo, invitationRepo, notificationRepo, userRepo, log)
