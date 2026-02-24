@@ -23,9 +23,6 @@ const OrganizationDetail = lazy(() => import("./pages/organization/OrganizationD
 // WEBHOOKS PAGES
 const Webhooks = lazy(() => import("./pages/webhooks/Webhooks"));
 
-// BILLING PAGES
-const Billing = lazy(() => import("./pages/billing/Billing"));
-
 // SETTINGS PAGES
 const Settings = lazy(() => import("./pages/settings/Settings"));
 
@@ -55,7 +52,6 @@ const App = () => {
           <Route path="/organizations" element={<Organization />} />
           <Route path="/organizations/:orgId" element={<OrganizationDetail />} />
           <Route path="/webhooks" element={<Webhooks />} />
-          <Route path="/billing" element={<Billing />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
 
