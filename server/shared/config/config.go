@@ -15,6 +15,7 @@ type Config struct {
 	Database DatabaseConfig
 	Redis    RedisConfig
 	JWT      JWTConfig
+	LemonSqueezy LemonSqueezyConfig
 	TOTP     TOTPConfig
 	Security SecurityConfig
 	Frontend FrontendConfig
@@ -92,6 +93,14 @@ type JWTConfig struct {
 	AccessTokenDuration  time.Duration
 	RefreshTokenDuration time.Duration
 	Issuer               string
+}
+
+type LemonSqueezyConfig struct {
+	APIKey        string        // LEMONSQUEEZY_API_KEY
+	StoreID       string        // LEMONSQUEEZY_STORE_ID
+	WebhookSecret string        // LEMONSQUEEZY_WEBHOOK_SECRET
+	BaseURL       string        // https://api.lemonsqueezy.com/v1
+	Timeout       time.Duration // HTTP client timeout
 }
 
 type TOTPConfig struct {
@@ -231,6 +240,13 @@ func Load() (*Config, error) {
 			RefreshTokenDuration: getEnvAsDuration("REFRESH_TOKEN_DURATION", 7*24*time.Hour),
 			Issuer:               getEnv("JWT_ISSUER", "upnixo.com"),
 		},
+		LemonSqueezy: LemonSqueezyConfig{
+			APIKey:        getEnv("LEMONSQUEEZY_API_KEY", ""),
+			StoreID:       getEnv("LEMONSQUEEZY_STORE_ID", ""),
+			WebhookSecret: getEnv("LEMONSQUEEZY_WEBHOOK_SECRET", ""),
+			BaseURL:       getEnv("LEMONSQUEEZY_BASE_URL", "https://api.lemonsqueezy.com/v1"),
+			Timeout:       getEnvAsDuration("LEMONSQUEEZY_TIMEOUT", 30*time.Second),
+		},
 		TOTP: TOTPConfig{
 			Issuer: getEnv("TOTP_ISSUER", "Upnixo"),
 			AESKey: getEnv("TOTP_AES_KEY", ""),
@@ -299,14 +315,6 @@ func Load() (*Config, error) {
 	
 	if len(cfg.JWT.Secret) < 32 {
 		return nil, fmt.Errorf("JWT_SECRET must be at least 32 characters")
-	}
-	
-	if cfg.TOTP.AESKey == "" {
-		return nil, fmt.Errorf("TOTP_AES_KEY is required")
-	}
-	
-	if len(cfg.TOTP.AESKey) != 64 { // 32 bytes hex = 64 chars
-		return nil, fmt.Errorf("TOTP_AES_KEY must be 64 hex characters (32 bytes)")
 	}
 
 	if cfg.App.Env == "production" && cfg.Redis.Password == "" {
