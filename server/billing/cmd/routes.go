@@ -16,7 +16,7 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 
 	// Pricing page — no auth needed
 	v1 := app.Group("/api/v1")
-	plans := v1.Group("/plans")
+	plans := v1.Group("/billing/plans")
 	plans.Get("/", deps.PlanHandler.ListPlans)
 	plans.Get("/:tier/:billing_period", deps.PlanHandler.GetPlan)
 
