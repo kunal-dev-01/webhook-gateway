@@ -706,10 +706,3 @@ func mapOrderStatus(status string) models.PaymentStatus {
 		return models.PaymentPending
 	}
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
