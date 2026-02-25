@@ -15,13 +15,13 @@ import (
 	"userorg/internal/repository"
 	"userorg/internal/services"
 	"userorg/internal/utils"
+	"userorg/internal/config"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/rs/zerolog"
 
 	"shared/auth"
-	"shared/config"
 	sharedErrors "shared/errors"
 	"shared/logger"
 )
@@ -113,7 +113,12 @@ func InitDependencies() (*Dependencies, error) {
 	log.Info("✅ Redis connected")
 
 	// 5. Initialize Managers
-	jwtManager := auth.NewTokenManager(&cfg.JWT)
+	jwtManager, err := auth.NewTokenManager(auth.Config{
+        Secret:               cfg.JWT.Secret,
+        AccessTokenDuration:  cfg.JWT.AccessTokenDuration,
+        RefreshTokenDuration: cfg.JWT.RefreshTokenDuration,
+        Issuer:               cfg.JWT.Issuer,
+    })
 	log.Info("✅ JWT Manager initialized")
 
 	// 6. Initialize R2 Client

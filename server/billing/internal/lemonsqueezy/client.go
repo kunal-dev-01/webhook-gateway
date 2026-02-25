@@ -13,7 +13,8 @@ import (
 	"strconv"
 	"time"
 
-	"shared/config"
+	"billing/internal/config"
+
 	"shared/logger"
 )
 

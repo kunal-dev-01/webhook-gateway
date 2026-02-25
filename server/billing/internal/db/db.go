@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"shared/config"
+	"billing/internal/config"
 	"shared/logger"
 
 	_ "github.com/lib/pq"

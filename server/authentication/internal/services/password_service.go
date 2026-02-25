@@ -9,8 +9,8 @@ import (
 	"authentication/internal/dto"
 	"authentication/internal/repository"
 	"authentication/internal/utils"
+	"authentication/internal/config"
 
-	"shared/config"
 	"shared/errors"
 	"shared/logger"
 	"shared/models"

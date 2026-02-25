@@ -10,7 +10,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"shared/config"
+	"userorg/internal/config"
+
 )
 
 // ============================================================================

@@ -9,13 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"shared/config"
 	"billing/internal/db"
 	"billing/internal/handlers"
 	"billing/internal/lemonsqueezy"
 	"billing/internal/redis"
 	"billing/internal/repository"
 	"billing/internal/services"
+	"billing/internal/config"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -103,8 +103,18 @@ func InitDependencies() (*Dependencies, error) {
 	log.Info("✅ Redis connected")
 
 	// 5. JWT Manager (verify-only in billing — no token creation)
-	jwtManager := auth.NewTokenManager(&cfg.JWT)
-	log.Info("✅ JWT Manager initialized")
+	jwtManager, err := auth.NewTokenManager(auth.Config{
+        Secret:               cfg.JWT.Secret,
+        AccessTokenDuration:  cfg.JWT.AccessTokenDuration,
+        RefreshTokenDuration: cfg.JWT.RefreshTokenDuration,
+        Issuer:               cfg.JWT.Issuer,
+    })
+
+    if err != nil {
+        return nil, fmt.Errorf("JWT Manager init error: %w", err)
+    }
+
+    log.Info("✅ JWT Manager initialized")
 
 	// 6. LemonSqueezy Client
 	lsClient := lemonsqueezy.NewClient(&cfg.LemonSqueezy)

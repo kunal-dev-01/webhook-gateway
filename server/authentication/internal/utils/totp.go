@@ -13,7 +13,8 @@ import (
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 
-	"shared/config"
+	"authentication/internal/config"
+
 	"shared/errors"
 	sharedUtils "shared/utils"
 )
