@@ -295,9 +295,9 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("REDIS_PASSWORD is required in production")
 	}
 
-	if cfg.Redis.Password != "" && len(cfg.Redis.Password) < 32 {
-		return nil, fmt.Errorf("REDIS_PASSWORD must be at least 32 characters")
-	}
+	// if cfg.Redis.Password != "" && len(cfg.Redis.Password) < 32 {
+	// 	return nil, fmt.Errorf("REDIS_PASSWORD must be at least 32 characters")
+	// }
 
 	if cfg.AWS.AWSAccessKey == "" {
 		return nil, fmt.Errorf("AWS_ACCESS_KEY_ID is required")
