@@ -19,7 +19,6 @@ type Config struct {
 	Security SecurityConfig
 	Frontend FrontendConfig
 	AWS      AWSConfig
-	R2       R2Config 
 	App      AppConfig
 	Logger   LoggerConfig
 }
@@ -110,8 +109,6 @@ type SecurityConfig struct {
 
 type FrontendConfig struct {
 	FrontendUrl     string
-	VerificationUrl string
-	ResetUrl        string
 }
 
 type AWSConfig struct {
@@ -139,14 +136,6 @@ type AppConfig struct {
 	// Features
 	EnableMetrics bool
 	EnableHealth  bool
-}
-
-type R2Config struct {
-	AccountID       string
-	AccessKeyID     string
-	SecretAccessKey string
-	Bucket          string
-	PublicURL       string // e.g. "https://cdn.yourdomain.com"
 }
 
 type LoggerConfig struct {
@@ -248,8 +237,6 @@ func Load() (*Config, error) {
 		},
 		Frontend: FrontendConfig{
 			FrontendUrl:     getEnv("FRONTEND_URL", "http://localhost:4321"),
-			VerificationUrl: getEnv("VERIFICATION_URL", "http://localhost:4321/auth/verify"),
-			ResetUrl:        getEnv("RESET_URL", "http://localhost:4321/auth/reset"),
 		},
 		AWS: AWSConfig{
 			AWSAccessKey:   getEnv("AWS_ACCESS_KEY_ID", ""),
@@ -257,13 +244,6 @@ func Load() (*Config, error) {
 			AWSRegion:      getEnv("AWS_REGION", "eu-central-1"),
 			AWSSQSQueueURL: getEnv("AWS_SQS_QUEUE_URL", ""),
 			AWSFromEmail:   getEnv("AWS_FROM_EMAIL", ""),
-		},
-		R2: R2Config{
-			AccountID:       getEnv("R2_ACCOUNT_ID", ""),
-			AccessKeyID:     getEnv("R2_ACCESS_KEY_ID", ""),
-			SecretAccessKey: getEnv("R2_SECRET_ACCESS_KEY", ""),
-			Bucket:          getEnv("R2_BUCKET", ""),
-			PublicURL:       getEnv("R2_PUBLIC_URL", ""),
 		},
 		App: AppConfig{
 			Env:              getEnv("APP_ENV", "development"),

@@ -17,7 +17,6 @@ type Config struct {
 	JWT      JWTConfig
 	Security SecurityConfig
 	Frontend FrontendConfig
-	AWS      AWSConfig
 	R2       R2Config 
 	App      AppConfig
 	Logger   LoggerConfig
@@ -101,16 +100,6 @@ type SecurityConfig struct {
 
 type FrontendConfig struct {
 	FrontendUrl     string
-	VerificationUrl string
-	ResetUrl        string
-}
-
-type AWSConfig struct {
-	AWSAccessKey   string
-	AWSSecretKey   string
-	AWSRegion      string
-	AWSSQSQueueURL string
-	AWSFromEmail   string
 }
 
 type AppConfig struct {
@@ -232,15 +221,6 @@ func Load() (*Config, error) {
 		},
 		Frontend: FrontendConfig{
 			FrontendUrl:     getEnv("FRONTEND_URL", "http://localhost:4321"),
-			VerificationUrl: getEnv("VERIFICATION_URL", "http://localhost:4321/auth/verify"),
-			ResetUrl:        getEnv("RESET_URL", "http://localhost:4321/auth/reset"),
-		},
-		AWS: AWSConfig{
-			AWSAccessKey:   getEnv("AWS_ACCESS_KEY_ID", ""),
-			AWSSecretKey:   getEnv("AWS_SECRET_ACCESS_KEY", ""),
-			AWSRegion:      getEnv("AWS_REGION", "eu-central-1"),
-			AWSSQSQueueURL: getEnv("AWS_SQS_QUEUE_URL", ""),
-			AWSFromEmail:   getEnv("AWS_FROM_EMAIL", ""),
 		},
 		R2: R2Config{
 			AccountID:       getEnv("R2_ACCOUNT_ID", ""),
@@ -299,17 +279,6 @@ func Load() (*Config, error) {
 	// 	return nil, fmt.Errorf("REDIS_PASSWORD must be at least 32 characters")
 	// }
 
-	if cfg.AWS.AWSAccessKey == "" {
-		return nil, fmt.Errorf("AWS_ACCESS_KEY_ID is required")
-	}
-
-	if cfg.AWS.AWSSecretKey == "" {
-		return nil, fmt.Errorf("AWS_SECRET_ACCESS_KEY is required")
-	}
-
-	if cfg.AWS.AWSRegion == "" {
-		return nil, fmt.Errorf("AWS_REGION is required")
-	}
 
 	// Validate log level
 	validLevels := []string{"trace", "debug", "info", "warn", "error", "fatal", "panic"}

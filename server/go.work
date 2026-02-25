@@ -4,5 +4,6 @@ use (
   ./authentication
   ./billing
   ./userorg
+  ./webhook
   ./shared
 )
