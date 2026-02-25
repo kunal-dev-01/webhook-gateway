@@ -48,6 +48,8 @@ nginx-dev:
 	@echo "✅ Dev ready!"
 	@echo "   http://localhost/api/v1/auth"
 	@echo "   http://localhost/api/v1/user"
+	@echo "   http://localhost/api/v1/billing"
+	@echo "   http://localhost/api/v1/webhook"
 	@echo "   http://localhost/health"
 
 # ════════════════════════════════════════════════════════════════
