@@ -28,7 +28,7 @@ const NotFound = () => {
         {/* Actions */}
         <div className="flex flex-col sm:flex-row justify-center gap-4 pt-8">
           <button
-            onClick={() => (window.location.href = "/")}
+            onClick={() => (window.location.href = "/dashboard")}
             className="px-10 py-2.5 rounded-xl font-bold bg-zinc-100 text-zinc-950 hover:bg-zinc-200 transition-all duration-200 ease-in-out cursor-pointer"
           >
             Back to Home

@@ -1,8 +1,16 @@
-import { Outlet, Link } from "react-router-dom";
+import { Outlet, Link, useNavigate } from "react-router-dom";
 import { memo } from "react";
 import { ChevronDown } from "@/svg/Common";
+import { useAuthStore } from "@/store/auth.store";
 
 const AuthLayout = memo(() => {
+  const navigate = useNavigate();
+  const { user, isAuthenticated } = useAuthStore();
+
+  if (user && isAuthenticated) {
+    navigate("/dashboard");
+  }
+
   return (
     <div className="min-h-screen w-full flex items-center justify-center p-4 relative overflow-hidden transition-colors duration-500">
       {/* ─── Premium Gradient Backdrop ─── */}

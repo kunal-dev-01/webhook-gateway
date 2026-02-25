@@ -1,3 +1,4 @@
+import { useAuthStore } from "@/store/auth.store";
 import { Dashboard } from "@/svg/Auth";
 import { Settings } from "@/svg/Common";
 import { Bolt, Building } from "@/svg/More";
@@ -55,6 +56,11 @@ const NavItem = memo(({ item, isActive, onClick }: NavItemProps) => {
 const DashboardLayout: FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, isAuthenticated } = useAuthStore();
+
+  if (!user || !isAuthenticated) {
+    navigate("/auth/login");
+  }
 
   const navItems = useMemo<NavItemConfig[]>(() => [
     { label: "Dashboard", path: "/dashboard", icon: Dashboard },

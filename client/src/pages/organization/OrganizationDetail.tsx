@@ -54,7 +54,7 @@ const OrganizationDetail = () => {
         </p>
         
         {/* TABS NAVIGATION */}
-        <div className="mt-8 flex items-center gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800 pb-0.5 no-scrollbar">
+        <div className="mt-8 flex items-center gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800 pb-0.5">
            <TabButton 
              active={activeTab === 'overview'} 
              onClick={() => setActiveTab('overview')} 
@@ -89,15 +89,14 @@ const OrganizationDetail = () => {
         
         {/* VIEW: OVERVIEW */}
         {activeTab === "overview" && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="space-y-8">
              <OrgUsageLimits org={organization} />
-             {/* You can add a "Recent Activity" component here later */}
           </div>
         )}
 
         {/* VIEW: MEMBERS */}
         {activeTab === "members" && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             <div className="lg:col-span-8">
               <OrgMembersList orgId={organization.id} currentUserRole={organization.role} />
             </div>
@@ -114,7 +113,7 @@ const OrganizationDetail = () => {
 
         {/* VIEW: SETTINGS */}
         {activeTab === "settings" && isOwnerOrAdmin && (
-          <div className="max-w-3xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="max-w-3xl">
              <OrgGeneralSettings org={organization} />
           </div>
         )}
