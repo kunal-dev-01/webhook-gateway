@@ -5,5 +5,7 @@ use (
   ./billing
   ./userorg
   ./webhook
+  ./project
+  ./notification
   ./shared
 )
