@@ -6,6 +6,6 @@ use (
   ./userorg
   ./webhook
   ./project
-  ./notification
+  ./support
   ./shared
 )

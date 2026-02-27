@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"authentication/internal/config"
+	"support/internal/config"
 	"shared/logger"
 
 	"github.com/redis/go-redis/v9"
