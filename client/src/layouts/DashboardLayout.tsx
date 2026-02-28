@@ -1,7 +1,7 @@
 import { useAuthStore } from "@/store/auth.store";
 import { Dashboard } from "@/svg/Auth";
 import { Settings } from "@/svg/Common";
-import { Bolt, Building } from "@/svg/More";
+import { Bolt, Building, Chat } from "@/svg/More";
 import { memo, useMemo, type FC } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 
@@ -67,7 +67,7 @@ const DashboardLayout: FC = () => {
     { label: "webhooks", path: "/webhooks", icon: Bolt },
     { label: "Organizations", path: "/organizations", icon: Building },
     { label: "Settings", path: "/settings", icon: Settings },
-    { label: "Support", path: "/support", icon: Building },
+    { label: "Support", path: "/support", icon: Chat },
   ], []);
 
   const isPathActive = (path: string): boolean => {
