@@ -3,6 +3,10 @@ import type { PlanTier, BillingPeriod, SubscriptionStatus } from "./org.types";
 // Re-export for convenience
 export type { PlanTier, BillingPeriod, SubscriptionStatus };
 
+
+export type AddonType = "events" | "retention" | "seats" | "projects";
+export type AddonStatus = "active" | "canceled" | "expired" | "paused";
+
 // ============================================================================
 // PLAN FEATURES
 // ============================================================================
@@ -161,4 +165,101 @@ export interface UsageResponse {
   team_seats_limit: number;
   projects_limit: number;
   rate_limit_per_second: number;
+}
+
+
+// ============================================================================
+// ADDON TYPES 
+// ============================================================================
+
+
+// Addon catalog (available addons)
+export interface AddonPlan {
+  id: string;
+  name: string;
+  description?: string;
+  addon_type: AddonType;
+  quantity: number;
+  quantity_label: string; // "+100K events", "+7 days" etc.
+  price: number;
+  currency: string;
+  compatible_plans: PlanTier[];
+  display_order: number;
+}
+
+// Org ka active addon subscription
+export interface OrganizationAddon {
+  id: string;
+  organization_id: string;
+  addon_plan_id: string;
+  addon_type: AddonType;
+  quantity: number;
+  price_amount: number;
+  currency: string;
+  status: AddonStatus;
+  current_period_start: string;
+  current_period_end: string;
+  cancel_at_period_end: boolean;
+  canceled_at?: string;
+  created_at: string;
+}
+
+// Base plan + active addons ka total
+export interface EffectiveLimits {
+  organization_id: string;
+  base_plan_tier: PlanTier;
+
+  // Base limits
+  base_monthly_events_limit: number;
+  base_retention_days: number;
+  base_team_seats_limit: number;
+  base_projects_limit: number;
+
+  // Addon bonuses
+  addon_events_bonus: number;
+  addon_retention_bonus: number;
+  addon_seats_bonus: number;
+  addon_projects_bonus: number;
+
+  // Effective totals (enforce karne wale)
+  effective_monthly_events_limit: number;
+  effective_retention_days: number;
+  effective_team_seats_limit: number;
+  effective_projects_limit: number;
+
+  active_addons: OrganizationAddon[];
+}
+
+// ── Requests ─────────────────────────────────────────────────────────────────
+
+export interface CreateAddonCheckoutRequest {
+  addon_plan_id: string;
+}
+
+// ── Responses ─────────────────────────────────────────────────────────────────
+
+export interface ListAddonPlansResponse {
+  addons: AddonPlan[];
+}
+
+export interface ListOrgAddonsResponse {
+  addons: OrganizationAddon[];
+}
+
+export interface EffectiveLimitsResponse {
+  organization_id: string;
+  base_plan_tier: PlanTier;
+  base_monthly_events_limit: number;
+  base_retention_days: number;
+  base_team_seats_limit: number;
+  base_projects_limit: number;
+  addon_events_bonus: number;
+  addon_retention_bonus: number;
+  addon_seats_bonus: number;
+  addon_projects_bonus: number;
+  effective_monthly_events_limit: number;
+  effective_retention_days: number;
+  effective_team_seats_limit: number;
+  effective_projects_limit: number;
+  active_addons: OrganizationAddon[];
 }
