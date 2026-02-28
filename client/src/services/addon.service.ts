@@ -1,6 +1,7 @@
 // src/services/addon.service.ts
 
 import { axiosClient } from "@/libs/axios";
+import {unwrapResponse} from "@/utils/api";
 import type {
   ListAddonPlansResponse,
   ListOrgAddonsResponse,
@@ -9,10 +10,6 @@ import type {
   EffectiveLimitsResponse,
   OrganizationAddon,
 } from "@/types/billing.types";
-
-function unwrapResponse<T>(response: { data: { success: boolean; data: T } }): T {
-  return response.data.data;
-}
 
 export const addonService = {
   // ============================================================================

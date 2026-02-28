@@ -1,4 +1,5 @@
 import { axiosClient } from "@/libs/axios";
+import {unwrapResponse} from "@/utils/api";
 import type {
   UpdateUserRequest,
   UpdateUserResponse,
@@ -7,10 +8,6 @@ import type {
   UpdatePreferencesResponse,
   GetMeResponse,
 } from "@/types/user.types";
-
-function unwrapResponse<T>(response: { data: { success: boolean; data: T } }): T {
-  return response.data.data;
-}
 
 export const userService = {
   // ============================================================================

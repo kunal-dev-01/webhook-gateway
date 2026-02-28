@@ -1,4 +1,5 @@
 import { axiosClient } from "@/libs/axios";
+import {unwrapResponse} from "@/utils/api";
 import type {
   ListPlansResponse,
   CreateCheckoutRequest,
@@ -9,11 +10,6 @@ import type {
   ListPaymentsResponse,
   UsageResponse,
 } from "@/types/billing.types";
-
-// Same unwrap helper as org/auth service
-function unwrapResponse<T>(response: { data: { success: boolean; data: T } }): T {
-  return response.data.data;
-}
 
 export const billingService = {
   // ============================================================================

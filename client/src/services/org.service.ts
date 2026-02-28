@@ -1,4 +1,5 @@
 import { axiosClient } from "@/libs/axios";
+import {unwrapResponse} from "@/utils/api";
 import type {
   ListOrganizationsResponse,
   GetOrganizationResponse,
@@ -7,10 +8,6 @@ import type {
   UpdateOrgNameRequest,
   UpdateMemberRoleRequest,
 } from "@/types/org.types";
-
-function unwrapResponse<T>(response: { data: { success: boolean; data: T } }): T {
-  return response.data.data;
-}
 
 export const orgService = {
   // ============================================================================

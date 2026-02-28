@@ -1,4 +1,5 @@
 import { axiosClient } from "@/libs/axios";
+import {unwrapResponse} from "@/utils/api";
 import type {
   RegisterRequest,
   RegisterResponse,
@@ -21,11 +22,6 @@ import type {
   LogoutResponse,
   ListSessionsResponse,
 } from "@/types/auth.types";
-
-// Helper to unwrap backend response format: { success: true, data: {...} }
-function unwrapResponse<T>(response: { data: { success: boolean; data: T } }): T {
-  return response.data.data;
-}
 
 export const authService = {
   // ============================================================================

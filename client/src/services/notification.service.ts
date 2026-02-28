@@ -1,14 +1,11 @@
 import { axiosClient } from "@/libs/axios";
+import {unwrapResponse} from "@/utils/api";
 import type {
   ListNotificationsParams,
   ListNotificationsResponse,
   UnreadCountResponse,
 } from "@/types/notification.types";
 import type { MessageResponse } from "@/types/api.types";
-
-function unwrapResponse<T>(response: { data: { success: boolean; data: T } }): T {
-  return response.data.data;
-}
 
 export const notificationService = {
   // GET /notifications

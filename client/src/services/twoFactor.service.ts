@@ -1,4 +1,5 @@
 import { axiosClient } from "@/libs/axios";
+import {unwrapResponse} from "@/utils/api";
 import type {
   Enable2FAResponse,
   Confirm2FARequest,
@@ -8,11 +9,6 @@ import type {
   RegenerateBackupCodesRequest,
   RegenerateBackupCodesResponse,
 } from "@/types/twoFactor.types";
-
-// Helper to unwrap backend response format
-function unwrapResponse<T>(response: { data: { success: boolean; data: T } }): T {
-  return response.data.data;
-}
 
 export const twoFactorService = {
   // ============================================================================

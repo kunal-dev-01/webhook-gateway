@@ -1,4 +1,5 @@
 import { axiosClient } from "@/libs/axios";
+import {unwrapResponse} from "@/utils/api";
 import type {
   Invitation,
   InviteMemberRequest,
@@ -7,10 +8,6 @@ import type {
   AcceptInvitationResponse,
 } from "@/types/invitation.types";
 import type { MessageResponse } from "@/types/api.types";
-
-function unwrapResponse<T>(response: { data: { success: boolean; data: T } }): T {
-  return response.data.data;
-}
 
 export const invitationService = {
   // POST /user/organizations/:orgId/invitations
