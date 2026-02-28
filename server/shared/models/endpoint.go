@@ -118,7 +118,7 @@ type Endpoint struct {
 	CircuitResetTimeoutSecs int                  `db:"circuit_reset_timeout_seconds" json:"circuit_reset_timeout_seconds"`
 
 	// Metadata
-	Metadata map[string]interface{} `db:"metadata" json:"metadata"`
+	Metadata map[string]any `db:"metadata" json:"metadata"`
 
 	// Soft delete
 	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
