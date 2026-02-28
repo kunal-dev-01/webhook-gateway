@@ -42,6 +42,7 @@ type Dependencies struct {
 	PaymentRepo      *repository.PaymentRepository
 	PlanRepo         *repository.PlanRepository
 	WebhookEventRepo *repository.WebhookEventRepository
+	addonRepo        *repository.AddonRepository
 
 	// Managers
 	JWTManager *auth.TokenManager
@@ -51,11 +52,13 @@ type Dependencies struct {
 	PlanService    *services.PlanService
 	BillingService *services.BillingService
 	WebhookService *services.WebhookService
+	AddonService   *services.AddonService
 
 	// Handlers
 	PlanHandler    *handlers.PlanHandler
 	BillingHandler *handlers.BillingHandler
 	WebhookHandler *handlers.WebhookHandler
+	AddonHandler   *handlers.AddonHandler
 }
 
 // ============================================================================
@@ -126,18 +129,21 @@ func InitDependencies() (*Dependencies, error) {
 	paymentRepo      := repository.NewPaymentRepository(database)
 	planRepo         := repository.NewPlanRepository(database)
 	webhookEventRepo := repository.NewWebhookEventRepository(database)
+	addonRepo        := repository.NewAddonRepository(database)
 	log.Info("✅ Repositories initialized")
 
 	// 8. Services
 	planService    := services.NewPlanService(planRepo, log)
 	billingService := services.NewBillingService(orgRepo, subRepo, paymentRepo, planRepo, lsClient, log)
-	webhookService := services.NewWebhookService(orgRepo, subRepo, paymentRepo, planRepo, webhookEventRepo, lsClient, log)
+	webhookService := services.NewWebhookService(orgRepo, subRepo, paymentRepo, planRepo, webhookEventRepo, addonRepo, lsClient, log)
+	addonService   := services.NewAddonService(orgRepo, subRepo, addonRepo, planRepo, lsClient, log)
 	log.Info("✅ Services initialized")
 
 	// 9. Handlers
 	planHandler    := handlers.NewPlanHandler(planService, log)
 	billingHandler := handlers.NewBillingHandler(billingService, log)
 	webhookHandler := handlers.NewWebhookHandler(webhookService, log)
+	AddonHandler   := handlers.NewAddonHandler(addonService, log)
 	log.Info("✅ Handlers initialized")
 
 	log.Info("🎉 All dependencies initialized successfully")
@@ -153,6 +159,7 @@ func InitDependencies() (*Dependencies, error) {
 		PaymentRepo:      paymentRepo,
 		PlanRepo:         planRepo,
 		WebhookEventRepo: webhookEventRepo,
+		addonRepo:        addonRepo,
 
 		JWTManager: jwtManager,
 		LSClient:   lsClient,
@@ -160,10 +167,12 @@ func InitDependencies() (*Dependencies, error) {
 		PlanService:    planService,
 		BillingService: billingService,
 		WebhookService: webhookService,
+		AddonService:   addonService,
 
 		PlanHandler:    planHandler,
 		BillingHandler: billingHandler,
 		WebhookHandler: webhookHandler,
+		AddonHandler:   AddonHandler,
 	}, nil
 }
 
