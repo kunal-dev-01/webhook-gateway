@@ -56,4 +56,12 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 	// Usage (member+ can see usage)
 	usage := protected.Group("/billing/:org_id")
 	usage.Get("/usage", deps.BillingHandler.GetUsage)
+
+	// Addons
+	addons := billing.Group("/billing/addons")
+	addons.Get("/available", deps.AddonHandler.ListAvailableAddons)
+	addons.Get("/", deps.AddonHandler.ListOrgAddons)
+	addons.Get("/limits", deps.AddonHandler.GetEffectiveLimits)
+	addons.Post("/checkout", deps.AddonHandler.CreateAddonCheckout)
+	addons.Delete("/:addon_id", deps.AddonHandler.CancelAddon)
 }
