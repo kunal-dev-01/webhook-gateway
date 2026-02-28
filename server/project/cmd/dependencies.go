@@ -39,6 +39,8 @@ type Dependencies struct {
 	ProjectRepo  *repository.ProjectRepository
 	DomainRepo   *repository.DomainRepository
 	EndpointRepo *repository.EndpointRepository
+	ApiKeyRepo   *repository.APIKeyRepository
+	CLISessionRepo *repository.CLISessionRepository
 
 	// Managers
 	JWTManager *auth.TokenManager
@@ -47,11 +49,15 @@ type Dependencies struct {
 	ProjectService  *services.ProjectService
 	DomainService   *services.DomainService
 	EndpointService *services.EndpointService
+	APIKeyService   *services.APIKeyService
+	CLISessionService *services.CLISessionService
 
 	// Handlers
 	ProjectHandler  *handlers.ProjectHandler
 	DomainHandler   *handlers.DomainHandler
 	EndpointHandler *handlers.EndpointHandler
+	APIKeyHandler   *handlers.APIKeyHandler
+	CLISessionHandler *handlers.CLISessionHandler
 }
 
 // ============================================================================
@@ -111,18 +117,24 @@ func InitDependencies() (*Dependencies, error) {
 	projectRepo  := repository.NewProjectRepository(database)
 	domainRepo   := repository.NewDomainRepository(database)
 	endpointRepo := repository.NewEndpointRepository(database)
+	apikeyRepo   := repository.NewAPIKeyRepository(database)
+	cliSessionRepo := repository.NewCLISessionRepository(database)
 	log.Info("✅ Repositories initialized")
 
 	// Services
 	projectService  := services.NewProjectService(projectRepo, log)
 	domainService   := services.NewDomainService(domainRepo, projectRepo, log)
 	endpointService := services.NewEndpointService(endpointRepo, projectRepo, log)
+	apiKeyService   := services.NewAPIKeyService(apikeyRepo, projectRepo, log)
+	cliSessionService := services.NewCLISessionService(cliSessionRepo, log)
 	log.Info("✅ Services initialized")
 
 	// Handlers
 	projectHandler  := handlers.NewProjectHandler(projectService, log)
 	domainHandler   := handlers.NewDomainHandler(domainService, log)
 	endpointHandler := handlers.NewEndpointHandler(endpointService, log)
+	apiKeyHandler   := handlers.NewAPIKeyHandler(apiKeyService, log)
+	cliSessionHandler := handlers.NewCLISessionHandler(cliSessionService, log)
 	log.Info("✅ Handlers initialized")
 
 	log.Info("🎉 All dependencies initialized successfully")
@@ -135,13 +147,21 @@ func InitDependencies() (*Dependencies, error) {
 		ProjectRepo:     projectRepo,
 		DomainRepo:      domainRepo,
 		EndpointRepo:    endpointRepo,
+		ApiKeyRepo:      apikeyRepo,
+		CLISessionRepo:  cliSessionRepo,
+
 		JWTManager:      jwtManager,
 		ProjectService:  projectService,
 		DomainService:   domainService,
 		EndpointService: endpointService,
+		APIKeyService:   apiKeyService,
+		CLISessionService: cliSessionService,
+
 		ProjectHandler:  projectHandler,
 		DomainHandler:   domainHandler,
 		EndpointHandler: endpointHandler,
+		APIKeyHandler:   apiKeyHandler,
+		CLISessionHandler: cliSessionHandler,
 	}, nil
 }
 

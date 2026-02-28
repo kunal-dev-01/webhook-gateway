@@ -68,4 +68,20 @@ func SetupRoutes(app *fiber.App, deps *Dependencies) {
 	domains.Get("/:domain_id", deps.DomainHandler.GetDomain)
 	domains.Delete("/:domain_id", deps.DomainHandler.DeleteDomain)
 	domains.Post("/:domain_id/verify", deps.DomainHandler.TriggerVerification)
+
+	// API Keys
+	apiKeys := orgs.Group("/api-keys")
+	apiKeys.Post("/", deps.APIKeyHandler.CreateAPIKey)
+	apiKeys.Get("/", deps.APIKeyHandler.ListAPIKeys)
+	apiKeys.Get("/:key_id", deps.APIKeyHandler.GetAPIKey)
+	apiKeys.Post("/:key_id/revoke", deps.APIKeyHandler.RevokeAPIKey)
+	apiKeys.Delete("/:key_id", deps.APIKeyHandler.DeleteAPIKey)
+
+	// CLI Sessions (user-level, not org-scoped)
+	// /revoke-all must be registered BEFORE /:session_id to avoid param conflict
+	cliSessions := protected.Group("/user/cli-sessions")
+	cliSessions.Get("/", deps.CLISessionHandler.ListSessions)
+	cliSessions.Post("/revoke-all", deps.CLISessionHandler.RevokeAllSessions)
+	cliSessions.Get("/:session_id", deps.CLISessionHandler.GetSession)
+	cliSessions.Post("/:session_id/revoke", deps.CLISessionHandler.RevokeSession)
 }
