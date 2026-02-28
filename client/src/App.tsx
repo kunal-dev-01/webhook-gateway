@@ -26,6 +26,11 @@ const Webhooks = lazy(() => import("./pages/webhooks/Webhooks"));
 // SETTINGS PAGES
 const Settings = lazy(() => import("./pages/settings/Settings"));
 
+// SUPPORT PAGES
+const Support = lazy(() => import("./pages/support/Support"));
+const SupportDetail = lazy(() => import("./pages/support/SupportDetail"));
+
+
 // NOT FOUND
 const NotFound = lazy(() => import("./pages/notfound/NotFound"));
 
@@ -53,6 +58,8 @@ const App = () => {
           <Route path="/organizations/:orgId" element={<OrganizationDetail />} />
           <Route path="/webhooks" element={<Webhooks />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/support" element={<Support />} />
+          <Route path="/support/:ticketId" element={<SupportDetail />} />
         </Route>
 
         <Route path="*" element={<NotFound />} />

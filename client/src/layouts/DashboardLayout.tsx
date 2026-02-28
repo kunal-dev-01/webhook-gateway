@@ -67,6 +67,7 @@ const DashboardLayout: FC = () => {
     { label: "webhooks", path: "/webhooks", icon: Bolt },
     { label: "Organizations", path: "/organizations", icon: Building },
     { label: "Settings", path: "/settings", icon: Settings },
+    { label: "Support", path: "/support", icon: Building },
   ], []);
 
   const isPathActive = (path: string): boolean => {
