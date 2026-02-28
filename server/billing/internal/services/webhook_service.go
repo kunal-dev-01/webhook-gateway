@@ -26,6 +26,7 @@ type WebhookService struct {
 	paymentRepo      *repository.PaymentRepository
 	planRepo         *repository.PlanRepository
 	webhookEventRepo *repository.WebhookEventRepository
+	addonRepo        *repository.AddonRepository
 	lsClient         *lemonsqueezy.Client
 	log              *logger.Logger
 }
@@ -36,6 +37,7 @@ func NewWebhookService(
 	paymentRepo *repository.PaymentRepository,
 	planRepo *repository.PlanRepository,
 	webhookEventRepo *repository.WebhookEventRepository,
+	addonRepo *repository.AddonRepository,
 	lsClient *lemonsqueezy.Client,
 	log *logger.Logger,
 ) *WebhookService {
@@ -45,6 +47,7 @@ func NewWebhookService(
 		paymentRepo:      paymentRepo,
 		planRepo:         planRepo,
 		webhookEventRepo: webhookEventRepo,
+		addonRepo:        addonRepo,
 		lsClient:         lsClient,
 		log:              log,
 	}
@@ -90,12 +93,12 @@ func (s *WebhookService) ProcessWebhook(ctx context.Context, rawBody []byte, sig
 	_ = json.Unmarshal(rawBody, &rawPayload)
 
 	event := &models.WebhookEvent{
-		ID:                  uuid.New(),
-		EventType:           eventType,
-		Status:              models.WebhookPending,
-		Payload:             rawPayload,
-		CreatedAt:           time.Now(),
-		UpdatedAt:           time.Now(),
+		ID:        uuid.New(),
+		EventType: eventType,
+		Status:    models.WebhookPending,
+		Payload:   rawPayload,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 	if webhookID != "" {
 		event.LemonSqueezyEventID = &webhookID
@@ -111,30 +114,66 @@ func (s *WebhookService) ProcessWebhook(ctx context.Context, rawBody []byte, sig
 	_ = s.webhookEventRepo.Update(ctx, event)
 
 	// 6. Dispatch to handler
+	// purchase_type check karo — addon ya main subscription
+	purchaseType := payload.Meta.CustomData["purchase_type"] // "addon" or ""
+
 	var processErr error
 	switch eventType {
+
 	case models.EventSubscriptionCreated:
-		processErr = s.handleSubscriptionCreated(ctx, event, rawBody)
+		if purchaseType == "addon" {
+			processErr = s.handleAddonSubscriptionCreated(ctx, event, rawBody)
+		} else {
+			processErr = s.handleSubscriptionCreated(ctx, event, rawBody)
+		}
+
 	case models.EventSubscriptionUpdated:
+		if purchaseType == "addon" {
+			// Addon pe subscription_updated ka koi action nahi
+			// Renewal = payment_success, Plan change = addons pe nahi hota
+			s.log.Info("Addon subscription_updated — skipping", "webhook_id", webhookID)
+			event.MarkAsSkipped("addon subscription_updated — no action needed")
+			_ = s.webhookEventRepo.Update(ctx, event)
+			return nil
+		}
 		processErr = s.handleSubscriptionUpdated(ctx, event, rawBody)
+
 	case models.EventSubscriptionCanceled:
-		processErr = s.handleSubscriptionCanceled(ctx, event, rawBody)
+		// LS sub ID se pehle addon check, phir main sub
+		processErr = s.handleAddonOrSubCanceled(ctx, event, rawBody)
+
 	case models.EventSubscriptionResumed:
-		processErr = s.handleSubscriptionResumed(ctx, event, rawBody)
+		processErr = s.handleAddonOrSubResumed(ctx, event, rawBody)
+
 	case models.EventSubscriptionExpired:
-		processErr = s.handleSubscriptionExpired(ctx, event, rawBody)
+		processErr = s.handleAddonOrSubExpired(ctx, event, rawBody)
+
 	case models.EventSubscriptionPaused:
-		processErr = s.handleSubscriptionPaused(ctx, event, rawBody)
+		processErr = s.handleAddonOrSubPaused(ctx, event, rawBody)
+
 	case models.EventSubscriptionUnpaused:
-		processErr = s.handleSubscriptionResumed(ctx, event, rawBody)
+		processErr = s.handleAddonOrSubResumed(ctx, event, rawBody)
+
 	case models.EventSubscriptionPaymentSuccess:
-		processErr = s.handlePaymentSuccess(ctx, event, rawBody)
+		if purchaseType == "addon" {
+			processErr = s.handleAddonPaymentSuccess(ctx, event, rawBody)
+		} else {
+			processErr = s.handlePaymentSuccess(ctx, event, rawBody)
+		}
+
 	case models.EventSubscriptionPaymentFailed:
-		processErr = s.handlePaymentFailed(ctx, event, rawBody)
+		if purchaseType == "addon" {
+			processErr = s.handleAddonPaymentFailed(ctx, event, rawBody)
+		} else {
+			processErr = s.handlePaymentFailed(ctx, event, rawBody)
+		}
+
 	case models.EventOrderCreated:
 		processErr = s.handleOrderCreated(ctx, event, rawBody)
+
 	case models.EventOrderRefunded:
 		processErr = s.handleOrderRefunded(ctx, event, rawBody)
+
 	default:
 		event.MarkAsSkipped(fmt.Sprintf("unhandled event type: %s", eventType))
 		_ = s.webhookEventRepo.Update(ctx, event)
@@ -466,6 +505,257 @@ func (s *WebhookService) handleSubscriptionPaused(ctx context.Context, event *mo
 	event.SubscriptionID = &sub.ID
 
 	s.log.Info("Subscription paused", "org_id", sub.OrganizationID, "sub_id", sub.ID)
+	return nil
+}
+
+// ============================================================================
+// ADDON WEBHOOK HANDLERS
+// ============================================================================
+
+func (s *WebhookService) handleAddonSubscriptionCreated(ctx context.Context, event *models.WebhookEvent, rawBody []byte) error {
+	var payload lemonsqueezy.SubscriptionWebhookPayload
+	if err := json.Unmarshal(rawBody, &payload); err != nil {
+		return fmt.Errorf("failed to parse addon subscription_created: %w", err)
+	}
+
+	attrs := payload.Data.Attributes
+	lsSubID := payload.Data.ID
+	customData := payload.Meta.CustomData
+
+	orgID, err := extractOrgID(customData)
+	if err != nil {
+		return fmt.Errorf("missing org_id: %w", err)
+	}
+
+	// addon_plan_id custom_data se nikalo
+	addonPlanIDStr := customData["addon_plan_id"]
+	if addonPlanIDStr == "" {
+		return fmt.Errorf("missing addon_plan_id in custom_data")
+	}
+	addonPlanID, err := uuid.Parse(addonPlanIDStr)
+	if err != nil {
+		return fmt.Errorf("invalid addon_plan_id: %w", err)
+	}
+
+	addonPlan, err := s.addonRepo.GetAddonPlanByID(ctx, addonPlanID)
+	if err != nil {
+		return fmt.Errorf("addon plan not found: %w", err)
+	}
+
+	now := time.Now()
+	lsOrderID := strconv.Itoa(attrs.OrderID)
+	lsCustomerID := strconv.Itoa(attrs.CustomerID)
+
+	orgAddon := &models.OrganizationAddon{
+		ID:                         uuid.New(),
+		OrganizationID:             orgID,
+		AddonPlanID:                addonPlanID,
+		LemonSqueezySubscriptionID: lsSubID,
+		LemonSqueezyOrderID:        &lsOrderID,
+		AddonType:                  addonPlan.AddonType,
+		Quantity:                   addonPlan.Quantity,
+		PriceAmount:                addonPlan.Price,
+		Currency:                   addonPlan.Currency,
+		Status:                     models.AddonStatusActive,
+		CurrentPeriodStart:         now,
+		CreatedAt:                  now,
+		UpdatedAt:                  now,
+	}
+
+	if attrs.RenewsAt != nil {
+		orgAddon.CurrentPeriodEnd = *attrs.RenewsAt
+	} else {
+		orgAddon.CurrentPeriodEnd = now.AddDate(0, 1, 0)
+	}
+
+	if err := s.addonRepo.CreateOrgAddon(ctx, orgAddon); err != nil {
+		return fmt.Errorf("failed to create org addon: %w", err)
+	}
+
+	// Org ke limits update karo (organizations table mein directly reflect)
+	if err := s.syncOrgLimitsAfterAddonChange(ctx, orgID, lsCustomerID); err != nil {
+		// Non-fatal — limits next request pe recalculate honge
+		s.log.Error("Failed to sync org limits after addon create", err, "org_id", orgID)
+	}
+
+	event.OrganizationID = &orgID
+	s.log.Info("Addon subscription created",
+		"org_id", orgID,
+		"addon_type", addonPlan.AddonType,
+		"quantity", addonPlan.Quantity,
+	)
+	return nil
+}
+
+func (s *WebhookService) handleAddonPaymentSuccess(ctx context.Context, event *models.WebhookEvent, rawBody []byte) error {
+	var payload lemonsqueezy.SubscriptionWebhookPayload
+	if err := json.Unmarshal(rawBody, &payload); err != nil {
+		return fmt.Errorf("failed to parse addon payment_success: %w", err)
+	}
+
+	lsSubID := payload.Data.ID
+	attrs := payload.Data.Attributes
+
+	addon, err := s.addonRepo.GetOrgAddonByLemonSqueezyID(ctx, lsSubID)
+	if err != nil {
+		return fmt.Errorf("addon not found for ls_id %s: %w", lsSubID, err)
+	}
+
+	if attrs.RenewsAt != nil {
+		addon.Renew(*attrs.RenewsAt)
+		if err := s.addonRepo.UpdateOrgAddon(ctx, addon); err != nil {
+			return fmt.Errorf("failed to renew addon: %w", err)
+		}
+	}
+
+	event.OrganizationID = &addon.OrganizationID
+	s.log.Info("Addon payment success — renewed", "org_id", addon.OrganizationID, "addon_id", addon.ID)
+	return nil
+}
+
+func (s *WebhookService) handleAddonPaymentFailed(ctx context.Context, event *models.WebhookEvent, rawBody []byte) error {
+	var payload lemonsqueezy.SubscriptionWebhookPayload
+	if err := json.Unmarshal(rawBody, &payload); err != nil {
+		return fmt.Errorf("failed to parse addon payment_failed: %w", err)
+	}
+
+	lsSubID := payload.Data.ID
+	addon, err := s.addonRepo.GetOrgAddonByLemonSqueezyID(ctx, lsSubID)
+	if err != nil {
+		return fmt.Errorf("addon not found: %w", err)
+	}
+
+	// Status ko paused karo — limits abhi nahi hatao (LS retry karega)
+	addon.Status = models.AddonStatusPaused
+	if err := s.addonRepo.UpdateOrgAddon(ctx, addon); err != nil {
+		return fmt.Errorf("failed to pause addon after payment failure: %w", err)
+	}
+
+	event.OrganizationID = &addon.OrganizationID
+	s.log.Warn("Addon payment failed — addon paused", "org_id", addon.OrganizationID, "addon_id", addon.ID)
+	return nil
+}
+
+// ── Shared handlers (addon check first, fallback to main sub) ────────────────
+
+func (s *WebhookService) handleAddonOrSubCanceled(ctx context.Context, event *models.WebhookEvent, rawBody []byte) error {
+	var payload lemonsqueezy.SubscriptionWebhookPayload
+	if err := json.Unmarshal(rawBody, &payload); err != nil {
+		return fmt.Errorf("failed to parse canceled payload: %w", err)
+	}
+
+	lsSubID := payload.Data.ID
+
+	addon, err := s.addonRepo.GetOrgAddonByLemonSqueezyID(ctx, lsSubID)
+	if err == nil {
+		addon.Cancel()
+		if updateErr := s.addonRepo.UpdateOrgAddon(ctx, addon); updateErr != nil {
+			return fmt.Errorf("failed to cancel addon: %w", updateErr)
+		}
+		event.OrganizationID = &addon.OrganizationID
+		s.log.Info("Addon cancelled via webhook", "org_id", addon.OrganizationID, "addon_id", addon.ID)
+		return nil
+	}
+
+	// Sirf 404 pe main sub try karo — real DB error pe fail karo
+	if appErr, ok := err.(*errors.AppError); ok && appErr.Code == 404 {
+		return s.handleSubscriptionCanceled(ctx, event, rawBody)
+	}
+	return fmt.Errorf("failed to lookup addon by ls_sub_id %s: %w", lsSubID, err)
+}
+
+func (s *WebhookService) handleAddonOrSubExpired(ctx context.Context, event *models.WebhookEvent, rawBody []byte) error {
+	var payload lemonsqueezy.SubscriptionWebhookPayload
+	if err := json.Unmarshal(rawBody, &payload); err != nil {
+		return fmt.Errorf("failed to parse expired payload: %w", err)
+	}
+
+	lsSubID := payload.Data.ID
+
+	addon, err := s.addonRepo.GetOrgAddonByLemonSqueezyID(ctx, lsSubID)
+	if err == nil {
+		addon.Expire()
+		if updateErr := s.addonRepo.UpdateOrgAddon(ctx, addon); updateErr != nil {
+			return fmt.Errorf("failed to expire addon: %w", updateErr)
+		}
+		_ = s.syncOrgLimitsAfterAddonChange(ctx, addon.OrganizationID, "")
+		event.OrganizationID = &addon.OrganizationID
+		s.log.Info("Addon expired", "org_id", addon.OrganizationID, "addon_id", addon.ID)
+		return nil
+	}
+
+	if appErr, ok := err.(*errors.AppError); ok && appErr.Code == 404 {
+		return s.handleSubscriptionExpired(ctx, event, rawBody)
+	}
+	return fmt.Errorf("failed to lookup addon by ls_sub_id %s: %w", lsSubID, err)
+}
+
+func (s *WebhookService) handleAddonOrSubPaused(ctx context.Context, event *models.WebhookEvent, rawBody []byte) error {
+	var payload lemonsqueezy.SubscriptionWebhookPayload
+	if err := json.Unmarshal(rawBody, &payload); err != nil {
+		return fmt.Errorf("failed to parse paused payload: %w", err)
+	}
+
+	lsSubID := payload.Data.ID
+
+	addon, err := s.addonRepo.GetOrgAddonByLemonSqueezyID(ctx, lsSubID)
+	if err == nil {
+		addon.Status = models.AddonStatusPaused
+		if updateErr := s.addonRepo.UpdateOrgAddon(ctx, addon); updateErr != nil {
+			return fmt.Errorf("failed to pause addon: %w", updateErr)
+		}
+		event.OrganizationID = &addon.OrganizationID
+		s.log.Info("Addon paused", "org_id", addon.OrganizationID, "addon_id", addon.ID)
+		return nil
+	}
+
+	if appErr, ok := err.(*errors.AppError); ok && appErr.Code == 404 {
+		return s.handleSubscriptionPaused(ctx, event, rawBody)
+	}
+	return fmt.Errorf("failed to lookup addon by ls_sub_id %s: %w", lsSubID, err)
+}
+
+func (s *WebhookService) handleAddonOrSubResumed(ctx context.Context, event *models.WebhookEvent, rawBody []byte) error {
+	var payload lemonsqueezy.SubscriptionWebhookPayload
+	if err := json.Unmarshal(rawBody, &payload); err != nil {
+		return fmt.Errorf("failed to parse resumed payload: %w", err)
+	}
+
+	lsSubID := payload.Data.ID
+
+	addon, err := s.addonRepo.GetOrgAddonByLemonSqueezyID(ctx, lsSubID)
+	if err == nil {
+		addon.Status = models.AddonStatusActive
+		addon.CancelAtPeriodEnd = false
+		addon.CanceledAt = nil
+		if updateErr := s.addonRepo.UpdateOrgAddon(ctx, addon); updateErr != nil {
+			return fmt.Errorf("failed to resume addon: %w", updateErr)
+		}
+		event.OrganizationID = &addon.OrganizationID
+		s.log.Info("Addon resumed", "org_id", addon.OrganizationID, "addon_id", addon.ID)
+		return nil
+	}
+
+	if appErr, ok := err.(*errors.AppError); ok && appErr.Code == 404 {
+		return s.handleSubscriptionResumed(ctx, event, rawBody)
+	}
+	return fmt.Errorf("failed to lookup addon by ls_sub_id %s: %w", lsSubID, err)
+}
+
+// ============================================================================
+// LIMIT SYNC HELPER
+// ============================================================================
+
+// syncOrgLimitsAfterAddonChange — addon create/expire ke baad org limits recalculate karo
+// Organizations table mein directly limits nahi rakhenge addon se —
+// effective limits service layer pe calculate honge (GetEffectiveLimits)
+// Ye function sirf log karta hai, actual limits AddonService.GetEffectiveLimits se aate hain
+func (s *WebhookService) syncOrgLimitsAfterAddonChange(_ context.Context, orgID uuid.UUID, _ string) error {
+	// Agar tumhe organizations table mein bhi addon limits cache karni hain
+	// to yahan SUM query chala ke update karo
+	// Abhi ke liye — GetEffectiveLimits() runtime pe calculate karta hai
+	// Jo services consume karte hain wo GetEffectiveLimits() call karein
+	s.log.Debug("Org limits will be recalculated on next request", "org_id", orgID)
 	return nil
 }
 
