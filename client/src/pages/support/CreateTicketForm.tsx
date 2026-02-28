@@ -78,6 +78,7 @@ export const CreateTicketForm = ({ onSuccess }: { onSuccess: () => void }) => {
                 value={field.value}
                 onChange={field.onChange}
                 disabled={isPending}
+                className="p-3"
               />
             )}
           />
@@ -91,6 +92,7 @@ export const CreateTicketForm = ({ onSuccess }: { onSuccess: () => void }) => {
                 value={field.value}
                 onChange={field.onChange}
                 disabled={isPending}
+                className="p-3"
               />
             )}
           />
@@ -103,14 +105,14 @@ export const CreateTicketForm = ({ onSuccess }: { onSuccess: () => void }) => {
           <textarea
             {...register("body")}
             disabled={isPending}
-            className="w-full min-h-30 p-3 border border-zinc-200 dark:border-zinc-800 rounded-xl bg-transparent outline-none focus:border-indigo-500 dark:focus:border-indigo-400 text-sm text-zinc-900 dark:text-white"
+            className="w-full min-h-30 p-3 border border-zinc-200 dark:border-zinc-800 rounded-xl bg-transparent outline-none focus:border-indigo-500 dark:focus:border-indigo-600 text-sm text-zinc-900 dark:text-white resize-none"
             placeholder="Please explain the issue..."
           />
           {errors.body && <p className="text-xs text-red-500 mt-1.5 ml-1">{errors.body.message}</p>}
         </div>
 
         <SubmitButton loading={isPending} type="submit">
-          Submit Ticket
+          {isPending ? "Submitting..." : "Submit Ticket"}
         </SubmitButton>
       </form>
     </section>

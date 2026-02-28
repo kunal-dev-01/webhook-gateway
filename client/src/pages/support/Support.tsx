@@ -1,9 +1,9 @@
 // src/pages/support/Support.tsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useListTickets } from "@/hooks/useSupport"; // Ensure correct path to your hooks
+import { useListTickets } from "@/hooks/useSupport";
 import { Loader } from "@/common/Loader";
-import { Error, X } from "@/svg/Common"; // Assume X is your plus/close icon
+import { Error, X } from "@/svg/Common"; 
 import SubmitButton from "@/common/SubmitButton";
 import { CreateTicketForm } from "./CreateTicketForm";
 import type { Ticket, TicketStatus } from "@/types/support.types";
@@ -61,10 +61,11 @@ const Support = () => {
 
       {/* Tabs & Content */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        <div className={`lg:col-span-${showCreateForm ? '7' : '12'} space-y-6 transition-all`}>
+        {/* YAHAN FIX KIYA HAI: Pura class string explicitly define kiya */}
+        <div className={`${showCreateForm ? 'lg:col-span-7' : 'lg:col-span-12'} space-y-6 transition-all duration-300`}>
           
           {/* TABS */}
-          <div className="flex items-center gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800 pb-0.5">
+          <div className="flex items-center gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800 pb-0.5 custom-scrollbar">
             {["all", "open", "in_progress", "resolved", "closed"].map((tab) => (
               <button
                 key={tab}

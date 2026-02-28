@@ -78,7 +78,7 @@ type TokenPair struct {
 func (m *TokenManager) GenerateTokenPair(
     userID, organizationID uuid.UUID,
     email, orgRole string,
-) (*TokenPair, *appErrors.AppError) {
+) (*TokenPair, error) {
     
     if userID == uuid.Nil || organizationID == uuid.Nil {
         return nil, appErrors.Internal(errors.New("missing user_id or organization_id in token generation"))
@@ -145,16 +145,16 @@ func (m *TokenManager) generateToken(
 // Token Validation
 // ============================================================================
 
-func (m *TokenManager) ValidateAccessToken(tokenString string) (*Claims, *appErrors.AppError) {
+func (m *TokenManager) ValidateAccessToken(tokenString string) (*Claims, error) {
     return m.validateToken(tokenString, "access")
 }
 
-func (m *TokenManager) ValidateRefreshToken(tokenString string) (*Claims, *appErrors.AppError) {
+func (m *TokenManager) ValidateRefreshToken(tokenString string) (*Claims, error) {
     return m.validateToken(tokenString, "refresh")
 }
 
-// validateToken returns *appErrors.AppError directly
-func (m *TokenManager) validateToken(tokenString, expectedType string) (*Claims, *appErrors.AppError) {
+// validateToken returns error directly
+func (m *TokenManager) validateToken(tokenString, expectedType string) (*Claims, error) {
     token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
         if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
             return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -205,7 +205,7 @@ func (m *TokenManager) validateToken(tokenString, expectedType string) (*Claims,
 // Token Refresh & Switching
 // ============================================================================
 
-func (m *TokenManager) RefreshAccessToken(refreshTokenString string) (string, *appErrors.AppError) {
+func (m *TokenManager) RefreshAccessToken(refreshTokenString string) (string, error) {
     claims, err := m.ValidateRefreshToken(refreshTokenString)
     if err != nil {
         return "", err // err is already *appErrors.AppError
@@ -232,7 +232,7 @@ func (m *TokenManager) SwitchOrganization(
     currentTokenString string,
     newOrganizationID uuid.UUID,
     newOrgRole string,
-) (*TokenPair, *appErrors.AppError) {
+) (*TokenPair, error) {
     
     claims, err := m.ValidateAccessToken(currentTokenString)
     if err != nil {

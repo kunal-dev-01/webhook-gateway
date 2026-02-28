@@ -58,11 +58,15 @@ func sessionKey(userID uuid.UUID, sessionID string) string {
 
 func (m *AuthMiddleware) RequireAuth() fiber.Handler {
     return func(c *fiber.Ctx) error {
-        // verifyRequest now returns *appErrors.AppError
         claims, err := m.verifyRequest(c)
         if err != nil {
-            // Directly use the AppError (contains Code & Message)
-            return c.Status(err.Code).JSON(err)
+            // Type assertion: Check agar ye humara custom AppError hai
+            if appErr, ok := err.(*appErrors.AppError); ok {
+                return c.Status(appErr.Code).JSON(appErr)
+            }
+            // Agar koi aur anjaan error aaya, toh usko 500 Internal error bana do
+            fallback := appErrors.Internal(err)
+            return c.Status(fallback.Code).JSON(fallback)
         }
         
         m.setContext(c, claims)
@@ -223,7 +227,7 @@ func (m *AuthMiddleware) RequireCanInviteMembers() fiber.Handler {
 // ============================================================================
 
 // Changed return type to *appErrors.AppError
-func (m *AuthMiddleware) verifyRequest(c *fiber.Ctx) (*auth.Claims, *appErrors.AppError) {
+func (m *AuthMiddleware) verifyRequest(c *fiber.Ctx) (*auth.Claims, error) {
     // 1. Extract Authorization header
     authHeader := c.Get("Authorization")
     if authHeader == "" {
@@ -239,9 +243,9 @@ func (m *AuthMiddleware) verifyRequest(c *fiber.Ctx) (*auth.Claims, *appErrors.A
 
     // 3. Validate JWT
     // ValidateAccessToken now returns *AppError (handling expiration, signature, etc.)
-    claims, err := m.jwtManager.ValidateAccessToken(tokenString)
-    if err != nil {
-        return nil, err
+    claims, jwtErr := m.jwtManager.ValidateAccessToken(tokenString)
+    if jwtErr != nil {
+        return nil, jwtErr
     }
 
     // 4. Redis session check
