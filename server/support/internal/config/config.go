@@ -16,6 +16,7 @@ type Config struct {
 	Redis    RedisConfig
 	JWT      JWTConfig
 	TOTP     TOTPConfig
+	R2       R2Config 
 	Security SecurityConfig
 	Frontend FrontendConfig
 	AWS      AWSConfig
@@ -102,6 +103,14 @@ type SecurityConfig struct {
 	MaxLoginAttempts int
 	LockoutDuration  time.Duration
 	RateLimitMax     int
+}
+
+type R2Config struct {
+	AccountID       string
+	AccessKeyID     string
+	SecretAccessKey string
+	Bucket          string
+	PublicURL       string // e.g. "https://cdn.yourdomain.com"
 }
 
 type FrontendConfig struct {
@@ -215,6 +224,13 @@ func Load() (*Config, error) {
 			EnableTracing: getEnvAsBool("REDIS_ENABLE_TRACING", false),
 			RetryAttempts: getEnvAsInt("REDIS_RETRY_ATTEMPTS", 3),
 			RetryDelay:    getEnvAsDuration("REDIS_RETRY_DELAY", 1*time.Second),
+		},
+		R2: R2Config{
+			AccountID:       getEnv("R2_ACCOUNT_ID", ""),
+			AccessKeyID:     getEnv("R2_ACCESS_KEY_ID", ""),
+			SecretAccessKey: getEnv("R2_SECRET_ACCESS_KEY", ""),
+			Bucket:          getEnv("R2_BUCKET", ""),
+			PublicURL:       getEnv("R2_PUBLIC_URL", ""),
 		},
 		JWT: JWTConfig{
 			Secret:               getEnv("JWT_SECRET", ""),
