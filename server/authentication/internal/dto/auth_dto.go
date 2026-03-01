@@ -21,7 +21,7 @@ type RegisterRequest struct {
 }
 
 type RegisterResponse struct {
-	Message      string                `json:"message"`
+	Message string `json:"message"`
 }
 
 // ============================================================================
@@ -29,10 +29,10 @@ type RegisterResponse struct {
 // ============================================================================
 
 type LoginRequest struct {
-	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required"`
+	Email     string `json:"email" validate:"required,email"`
+	Password  string `json:"password" validate:"required"`
 	IPAddress string `json:"-"`
-    UserAgent string `json:"-"`
+	UserAgent string `json:"-"`
 }
 
 type LoginResponse struct {
@@ -48,31 +48,15 @@ type LoginResponse struct {
 }
 
 // ============================================================================
-// ORGANIZATION SELECTION (After Login)
-// ============================================================================
-
-type SelectOrganizationRequest struct {
-	OrganizationID uuid.UUID `json:"organization_id" validate:"required"`
-}
-
-type SelectOrganizationResponse struct {
-	User         *UserResponse         `json:"user"`
-	Organization *OrganizationResponse `json:"organization"`
-	AccessToken  string                `json:"access_token"`
-	RefreshToken string                `json:"refresh_token"`
-	ExpiresIn    int64                 `json:"expires_in"`
-}
-
-// ============================================================================
 // 2FA VERIFICATION
 // ============================================================================
 
 type TwoFactorVerifyRequest struct {
 	TempToken  string `json:"temp_token" validate:"required"`
 	Code       string `json:"code" validate:"required,len=6"` // TOTP code
-	IsRecovery bool   `json:"is_recovery"` 
-	IPAddress string `json:"-"`
-    UserAgent string `json:"-"`
+	IsRecovery bool   `json:"is_recovery"`
+	IPAddress  string `json:"-"`
+	UserAgent  string `json:"-"`
 }
 
 type TwoFactorVerifyResponse struct {
@@ -205,30 +189,6 @@ type LogoutResponse struct {
 }
 
 // ============================================================================
-// SWITCH ORGANIZATION
-// ============================================================================
-
-type SwitchOrganizationRequest struct {
-	OrganizationID uuid.UUID `json:"organization_id" validate:"required"`
-}
-
-type SwitchOrganizationResponse struct {
-	Organization *OrganizationResponse `json:"organization"`
-	AccessToken  string                `json:"access_token"`
-	RefreshToken string                `json:"refresh_token"`
-	ExpiresIn    int64                 `json:"expires_in"`
-}
-
-// ============================================================================
-// GET CURRENT USER
-// ============================================================================
-
-type GetMeResponse struct {
-	User         *UserResponse         `json:"user"`
-	Organization *OrganizationResponse `json:"organization"` // Current active organization
-}
-
-// ============================================================================
 // RESPONSE MODELS
 // ============================================================================
 
@@ -243,25 +203,6 @@ type UserResponse struct {
 	TwoFactorConfirmedAt *time.Time             `json:"two_factor_confirmed_at,omitempty"`
 	Preferences          models.UserPreferences `json:"preferences"`
 	CreatedAt            time.Time              `json:"created_at"`
-}
-
-// OrganizationResponse represents organization data in auth responses
-type OrganizationResponse struct {
-	ID                 uuid.UUID                     `json:"id"`
-	Name               string                        `json:"name"`
-	Slug               string                        `json:"slug"`
-	OwnerID            uuid.UUID                     `json:"owner_id"`
-	Role               string                        `json:"role"` // User's role in this org
-	PlanTier           models.PlanTier               `json:"plan_tier"`
-	BillingPeriod      models.BillingPeriod          `json:"billing_period"`
-	SubscriptionStatus models.SubscriptionStatus     `json:"subscription_status"`
-	MonthlyEventsLimit int64                         `json:"monthly_events_limit"`
-	MonthlyEventsUsed  int64                         `json:"monthly_events_used"`
-	RetentionDays      int                           `json:"retention_days"`
-	TeamSeatsLimit     int                           `json:"team_seats_limit"`
-	RateLimitPerSecond int                           `json:"rate_limit_per_second"`
-	ProjectsLimit      int                           `json:"projects_limit"`
-	CreatedAt          time.Time                     `json:"created_at"`
 }
 
 // ============================================================================
@@ -280,26 +221,5 @@ func ToUserResponse(user *models.User) *UserResponse {
 		TwoFactorConfirmedAt: user.TwoFactorConfirmedAt,
 		Preferences:          user.Preferences,
 		CreatedAt:            user.CreatedAt,
-	}
-}
-
-// ToOrganizationResponse converts Organization model to OrganizationResponse DTO
-func ToOrganizationResponse(org *models.Organization, userRole string) *OrganizationResponse {
-	return &OrganizationResponse{
-		ID:                 org.ID,
-		Name:               org.Name,
-		Slug:               org.Slug,
-		OwnerID:            org.OwnerID,
-		Role:               userRole, // User's role in this organization
-		PlanTier:           org.PlanTier,
-		BillingPeriod:      org.BillingPeriod,
-		SubscriptionStatus: org.SubscriptionStatus,
-		MonthlyEventsLimit: org.MonthlyEventsLimit,
-		MonthlyEventsUsed:  org.MonthlyEventsUsed,
-		RetentionDays:      org.RetentionDays,
-		TeamSeatsLimit:     org.TeamSeatsLimit,
-		RateLimitPerSecond: org.RateLimitPerSecond,
-		ProjectsLimit:      org.ProjectsLimit,
-		CreatedAt:          org.CreatedAt,
 	}
 }

@@ -1,9 +1,9 @@
 package config
 
 import (
-	"slices"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -29,23 +29,23 @@ type DatabaseConfig struct {
 	User     string
 	Password string
 	DBName   string
-	
+
 	// SSL Configuration
 	SSLMode     string
 	SSLCert     string
 	SSLKey      string
 	SSLRootCert string
-	
+
 	// Connection Pool
 	MaxOpenConns    int
 	MaxIdleConns    int
 	ConnMaxLifetime time.Duration
 	ConnMaxIdleTime time.Duration
-	
+
 	// Timeouts
 	ConnectTimeout time.Duration
 	QueryTimeout   time.Duration
-	
+
 	// Advanced
 	LogLevel      string
 	AutoMigrate   bool
@@ -59,31 +59,31 @@ type RedisConfig struct {
 	Port     int
 	Password string
 	DB       int
-	
+
 	// Connection Pool
-	MaxRetries      int
-	MinIdleConns    int
-	PoolSize        int
-	PoolTimeout     time.Duration
-	MaxConnAge      time.Duration
-	IdleTimeout     time.Duration
-	IdleCheckFreq   time.Duration
-	
+	MaxRetries    int
+	MinIdleConns  int
+	PoolSize      int
+	PoolTimeout   time.Duration
+	MaxConnAge    time.Duration
+	IdleTimeout   time.Duration
+	IdleCheckFreq time.Duration
+
 	// Timeouts
 	DialTimeout  time.Duration
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
-	
+
 	// TLS/SSL
 	TLSEnabled bool
 	TLSCert    string
 	TLSKey     string
 	TLSCA      string
-	
+
 	// Advanced
-	EnableTracing      bool
-	RetryAttempts      int
-	RetryDelay         time.Duration
+	EnableTracing bool
+	RetryAttempts int
+	RetryDelay    time.Duration
 }
 
 type JWTConfig struct {
@@ -121,17 +121,17 @@ type AWSConfig struct {
 type AppConfig struct {
 	Env  string
 	Port string
-	
+
 	// Server Timeouts
 	RequestBodyLimit int           // Max request body size in bytes
 	ReadTimeout      time.Duration // Request read timeout
 	WriteTimeout     time.Duration // Response write timeout
 	IdleTimeout      time.Duration // Keep-alive timeout
-	
+
 	// Security
 	TrustedProxies []string // Trusted proxy IPs (for X-Forwarded-For)
 	AllowedOrigins []string // CORS allowed origins
-	
+
 	// Features
 	EnableMetrics bool
 	EnableHealth  bool
@@ -140,23 +140,23 @@ type AppConfig struct {
 type LoggerConfig struct {
 	// Log Level
 	Level string // "trace", "debug", "info", "warn", "error", "fatal", "panic"
-	
+
 	// Output
 	EnableConsole bool
 	EnableFile    bool
 	FilePath      string
-	
+
 	// File Rotation
 	MaxSize    int  // Maximum size in MB before rotation
 	MaxBackups int  // Maximum number of old log files to retain
 	MaxAge     int  // Maximum number of days to retain old log files
 	Compress   bool // Compress old log files
-	
+
 	// Performance
-	EnableSampling  bool
-	SamplingInitial int // Log first N of each level
+	EnableSampling     bool
+	SamplingInitial    int // Log first N of each level
 	SamplingThereafter int // Then 1 every N
-	
+
 	// Features
 	EnableCaller     bool // Add file:line to logs
 	EnableStackTrace bool // Add stack trace on error/fatal
@@ -194,7 +194,7 @@ func Load() (*Config, error) {
 			Port:     getEnvAsInt("REDIS_PORT", 6379),
 			Password: getEnv("REDIS_PASSWORD", ""),
 			DB:       getEnvAsInt("REDIS_DB", 0),
-			
+
 			MaxRetries:    getEnvAsInt("REDIS_MAX_RETRIES", 3),
 			MinIdleConns:  getEnvAsInt("REDIS_MIN_IDLE_CONNS", 5),
 			PoolSize:      getEnvAsInt("REDIS_POOL_SIZE", 50),
@@ -202,16 +202,16 @@ func Load() (*Config, error) {
 			MaxConnAge:    getEnvAsDuration("REDIS_MAX_CONN_AGE", 30*time.Minute),
 			IdleTimeout:   getEnvAsDuration("REDIS_IDLE_TIMEOUT", 10*time.Minute),
 			IdleCheckFreq: getEnvAsDuration("REDIS_IDLE_CHECK_FREQ", 1*time.Minute),
-			
+
 			DialTimeout:  getEnvAsDuration("REDIS_DIAL_TIMEOUT", 5*time.Second),
 			ReadTimeout:  getEnvAsDuration("REDIS_READ_TIMEOUT", 3*time.Second),
 			WriteTimeout: getEnvAsDuration("REDIS_WRITE_TIMEOUT", 3*time.Second),
-			
+
 			TLSEnabled: getEnvAsBool("REDIS_TLS_ENABLED", false),
 			TLSCert:    getEnv("REDIS_TLS_CERT", ""),
 			TLSKey:     getEnv("REDIS_TLS_KEY", ""),
 			TLSCA:      getEnv("REDIS_TLS_CA", ""),
-			
+
 			EnableTracing: getEnvAsBool("REDIS_ENABLE_TRACING", false),
 			RetryAttempts: getEnvAsInt("REDIS_RETRY_ATTEMPTS", 3),
 			RetryDelay:    getEnvAsDuration("REDIS_RETRY_DELAY", 1*time.Second),
@@ -276,11 +276,11 @@ func Load() (*Config, error) {
 	if cfg.Database.Password == "" {
 		return nil, fmt.Errorf("DB_PASSWORD is required")
 	}
-	
+
 	if cfg.JWT.Secret == "" {
 		return nil, fmt.Errorf("JWT_SECRET is required")
 	}
-	
+
 	if len(cfg.JWT.Secret) < 32 {
 		return nil, fmt.Errorf("JWT_SECRET must be at least 32 characters")
 	}
@@ -288,10 +288,6 @@ func Load() (*Config, error) {
 	if cfg.App.Env == "production" && cfg.Redis.Password == "" {
 		return nil, fmt.Errorf("REDIS_PASSWORD is required in production")
 	}
-
-	// if cfg.Redis.Password != "" && len(cfg.Redis.Password) < 32 {
-	// 	return nil, fmt.Errorf("REDIS_PASSWORD must be at least 32 characters")
-	// }
 
 	if cfg.AWS.AWSAccessKey == "" {
 		return nil, fmt.Errorf("AWS_ACCESS_KEY_ID is required")

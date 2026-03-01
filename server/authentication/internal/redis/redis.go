@@ -31,7 +31,6 @@ type Client struct {
 
 var (
 	instance *Client
-	once     sync.Once
 	mu       sync.RWMutex
 )
 

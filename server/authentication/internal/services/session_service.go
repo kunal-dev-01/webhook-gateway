@@ -5,10 +5,10 @@ import (
 
 	"github.com/google/uuid"
 
+	"authentication/internal/config"
 	"authentication/internal/dto"
 	"authentication/internal/repository"
 	"authentication/internal/utils"
-	"authentication/internal/config"
 
 	"shared/auth"
 	"shared/errors"
@@ -16,29 +16,26 @@ import (
 )
 
 type SessionService struct {
-	userRepo         *repository.UserRepository
-	sessionMgr       *utils.Manager
-	emailService     *utils.EmailService
-	jwtManager       *auth.TokenManager
-	cfg              *config.Config
-	log              *logger.Logger
+	userRepo   *repository.UserRepository
+	sessionMgr *utils.Manager
+	jwtManager *auth.TokenManager
+	cfg        *config.Config
+	log        *logger.Logger
 }
 
 func NewSessionService(
 	userRepo *repository.UserRepository,
 	sessionMgr *utils.Manager,
-	emailService *utils.EmailService,
 	jwtManager *auth.TokenManager,
 	cfg *config.Config,
 	log *logger.Logger,
 ) *SessionService {
 	return &SessionService{
-		userRepo:         userRepo,
-		sessionMgr:       sessionMgr,
-		emailService:     emailService,
-		jwtManager:       jwtManager,
-		cfg:              cfg,
-		log:              log,
+		userRepo:   userRepo,
+		sessionMgr: sessionMgr,
+		jwtManager: jwtManager,
+		cfg:        cfg,
+		log:        log,
 	}
 }
 
@@ -82,7 +79,6 @@ func (s *SessionService) RefreshToken(ctx context.Context, req *dto.RefreshToken
 		ExpiresIn:    int64(s.cfg.JWT.AccessTokenDuration.Seconds()),
 	}, nil
 }
-
 
 // ============================================================================
 // LOGOUT
@@ -143,4 +139,3 @@ func (s *SessionService) RevokeSessionByID(ctx context.Context, userID uuid.UUID
 	s.log.Info("Session revoked", "user_id", userID, "session_id", sessionID)
 	return nil
 }
-

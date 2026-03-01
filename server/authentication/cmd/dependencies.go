@@ -9,13 +9,13 @@ import (
 	"syscall"
 	"time"
 
+	"authentication/internal/config"
 	"authentication/internal/db"
 	"authentication/internal/handlers"
 	"authentication/internal/redis"
 	"authentication/internal/repository"
 	"authentication/internal/services"
 	"authentication/internal/utils"
-	"authentication/internal/config"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -24,6 +24,7 @@ import (
 	"shared/auth"
 	sharedErrors "shared/errors"
 	"shared/logger"
+	"shared/middleware"
 )
 
 // ============================================================================
@@ -49,18 +50,18 @@ type Dependencies struct {
 
 	// Services
 	RegisterService  *services.RegisterService
-	LoginService  *services.LoginService
-	TwoFactorService  *services.TwoFactorService
+	LoginService     *services.LoginService
+	TwoFactorService *services.TwoFactorService
 	PasswordService  *services.PasswordService
-	SessionService  *services.SessionService
-	EmailService *utils.EmailService
+	SessionService   *services.SessionService
+	EmailService     *utils.EmailService
 
 	// Handlers
-	RegisterHandler *handlers.RegisterHandler
-	LoginHandler *handlers.LoginHandler
+	RegisterHandler  *handlers.RegisterHandler
+	LoginHandler     *handlers.LoginHandler
 	TwoFactorHandler *handlers.TwoFactorHandler
-	PasswordHandler *handlers.PasswordHandler
-	SessionHandler *handlers.SessionHandler
+	PasswordHandler  *handlers.PasswordHandler
+	SessionHandler   *handlers.SessionHandler
 }
 
 // ============================================================================
@@ -90,10 +91,10 @@ func InitDependencies() (*Dependencies, error) {
 		EnableStackTrace: cfg.Logger.EnableStackTrace,
 		LogQueryParams:   false,
 	}
-	
+
 	log := logger.New(loggerCfg)
 	logger.Init(loggerCfg)
-	
+
 	log.Info("🚀 Initializing Authentication Service dependencies...")
 
 	// 3. Database Connection
@@ -112,17 +113,17 @@ func InitDependencies() (*Dependencies, error) {
 
 	// 5. Initialize Managers
 	jwtManager, err := auth.NewTokenManager(auth.Config{
-        Secret:               cfg.JWT.Secret,
-        AccessTokenDuration:  cfg.JWT.AccessTokenDuration,
-        RefreshTokenDuration: cfg.JWT.RefreshTokenDuration,
-        Issuer:               cfg.JWT.Issuer,
-    })
+		Secret:               cfg.JWT.Secret,
+		AccessTokenDuration:  cfg.JWT.AccessTokenDuration,
+		RefreshTokenDuration: cfg.JWT.RefreshTokenDuration,
+		Issuer:               cfg.JWT.Issuer,
+	})
 
-    if err != nil {
-        return nil, fmt.Errorf("JWT Manager init error: %w", err)
-    }
+	if err != nil {
+		return nil, fmt.Errorf("JWT Manager init error: %w", err)
+	}
 
-    log.Info("✅ JWT Manager initialized")
+	log.Info("✅ JWT Manager initialized")
 
 	totpManager, err := utils.NewTOTPManager(&cfg.TOTP)
 	if err != nil {
@@ -200,50 +201,53 @@ func InitDependencies() (*Dependencies, error) {
 	sessionService := services.NewSessionService(
 		userRepo,
 		sessionManager,
-		emailService,
 		jwtManager,
 		cfg,
 		log,
 	)
 	log.Info("✅ Session Service initialized")
 
-	// 10. Initialize Handlers
+	// 10. Cookie Settings (Environment-Aware)
+	cookieSettings := middleware.NewCookieSettings(cfg.App.IsProduction())
+	log.Info("✅ Cookie settings configured", "production", cfg.App.IsProduction())
+
+	// 11. Initialize Handlers
 	registerHandler := handlers.NewRegisterHandler(registerService, log)
-	loginHandler := handlers.NewLoginHandler(loginService, log)
+	loginHandler := handlers.NewLoginHandler(loginService, log, cookieSettings)
 	twoFactorHandler := handlers.NewTwoFactorHandler(twoFactorService, log)
 	passwordHandler := handlers.NewPasswordHandler(passwordService, log)
-	sessionHandler := handlers.NewSessionHandler(sessionService, log, sessionManager)
+	sessionHandler := handlers.NewSessionHandler(sessionService, log, sessionManager, cookieSettings)
 	log.Info("✅ Handlers initialized")
 
 	log.Info("🎉 All dependencies initialized successfully")
 
 	return &Dependencies{
-		Config:           cfg,
-		DB:               database,
-		Redis:            redisClient,
-		Logger:           log,
+		Config: cfg,
+		DB:     database,
+		Redis:  redisClient,
+		Logger: log,
 
 		UserRepo:         userRepo,
 		OrganizationRepo: organizationRepo,
 		PlanRepo:         planRepo,
 		TokenRepo:        tokenRepo,
 
-		JWTManager:       jwtManager,
-		TOTPManager:      totpManager,
-		SessionManager:   sessionManager,
+		JWTManager:     jwtManager,
+		TOTPManager:    totpManager,
+		SessionManager: sessionManager,
 
 		EmailService:     emailService,
 		RegisterService:  registerService,
-		LoginService:      loginService,
+		LoginService:     loginService,
 		TwoFactorService: twoFactorService,
-		PasswordService:   passwordService,
-		SessionService:    sessionService,
+		PasswordService:  passwordService,
+		SessionService:   sessionService,
 
 		RegisterHandler:  registerHandler,
-		LoginHandler:      loginHandler,
+		LoginHandler:     loginHandler,
 		TwoFactorHandler: twoFactorHandler,
-		PasswordHandler:   passwordHandler,
-		SessionHandler:    sessionHandler,
+		PasswordHandler:  passwordHandler,
+		SessionHandler:   sessionHandler,
 	}, nil
 }
 
@@ -313,6 +317,7 @@ func main() {
 	// Global Middleware
 	app.Use(deps.Logger.HTTPMiddleware())
 	app.Use(deps.Logger.RecoveryMiddleware())
+	app.Use(middleware.SecurityHeaders(deps.Config.App.IsProduction()))
 	app.Use(cors.New(getCORSConfig(deps.Config)))
 
 	// Setup Routes
@@ -323,12 +328,12 @@ func main() {
 		// Quick DB ping
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		
+
 		dbHealthy := true
 		if err := deps.DB.PingContext(ctx); err != nil {
 			dbHealthy = false
 		}
-		
+
 		return c.JSON(fiber.Map{
 			"status":    "ok",
 			"service":   "authentication",
@@ -344,7 +349,7 @@ func main() {
 	app.Get("/health/detailed", func(c *fiber.Ctx) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
+
 		// Database check
 		dbHealthy := true
 		dbLatency := time.Duration(0)
@@ -354,10 +359,10 @@ func main() {
 		} else {
 			dbLatency = time.Since(start)
 		}
-		
+
 		// Get pool stats
 		stats := deps.DB.Stats()
-		
+
 		return c.JSON(fiber.Map{
 			"status":    "ok",
 			"service":   "authentication",
@@ -365,12 +370,12 @@ func main() {
 			"timestamp": time.Now().Unix(),
 			"checks": fiber.Map{
 				"database": fiber.Map{
-					"healthy":  dbHealthy,
-					"latency":  dbLatency.Milliseconds(),
+					"healthy": dbHealthy,
+					"latency": dbLatency.Milliseconds(),
 					"pool": fiber.Map{
-						"open":    stats.OpenConnections,
-						"in_use":  stats.InUse,
-						"idle":    stats.Idle,
+						"open":   stats.OpenConnections,
+						"in_use": stats.InUse,
+						"idle":   stats.Idle,
 					},
 				},
 			},
@@ -393,10 +398,10 @@ func main() {
 	<-quit
 
 	deps.Logger.Info("🛑 Shutting down server...")
-	
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
 		deps.Logger.Error("Server forced to shutdown", err)
 	}
@@ -410,7 +415,7 @@ func main() {
 
 func getCORSConfig(cfg *config.Config) cors.Config {
 	origins := getAllowedOrigins(cfg.App.AllowedOrigins)
-	
+
 	if cfg.App.IsDevelopment() {
 		if len(cfg.App.AllowedOrigins) == 0 || cfg.App.AllowedOrigins[0] == "*" {
 			origins = "http://localhost:3000,http://localhost:4321,http://localhost:5173"
@@ -423,7 +428,7 @@ func getCORSConfig(cfg *config.Config) cors.Config {
 			MaxAge:           3600,
 		}
 	}
-	
+
 	return cors.Config{
 		AllowOrigins:     origins,
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",

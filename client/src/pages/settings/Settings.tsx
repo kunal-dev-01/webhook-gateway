@@ -32,7 +32,7 @@ const Settings = () => {
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl py-8 md:py-12">
+    <div className="mx-auto w-full max-w-7xl py-8 md:py-12 anim-fade-in">
       
       {/* Header */}
       <div className="mb-8 md:mb-12">
