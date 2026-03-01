@@ -111,3 +111,14 @@ html {
 [data-sonner-toast] * {
   border-radius: inherit;
 }
+
+/* ===============================
+   Custom Animations
+   =============================== */
+
+.anim-fade-in        { animation: fadeIn        0.5s ease forwards; }
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}

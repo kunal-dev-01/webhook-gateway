@@ -1,26 +1,19 @@
-import { Outlet, Link, useNavigate } from "react-router-dom";
+import { Outlet, Link } from "react-router-dom";
 import { memo } from "react";
 import { ChevronDown } from "@/svg/Common";
-import { useAuthStore } from "@/store/auth.store";
 
 const AuthLayout = memo(() => {
-  const navigate = useNavigate();
-  const { user, isAuthenticated } = useAuthStore();
-
-  if (user && isAuthenticated) {
-    navigate("/dashboard");
-  }
-
   return (
     <div className="min-h-screen w-full flex items-center justify-center p-4 relative overflow-hidden transition-colors duration-500">
       {/* ─── Premium Gradient Backdrop ─── */}
-      <div className="lg:block hidden absolute inset-0 overflow-hidden pointer-events-none">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none -z-10">
         {/* Top Right Glow */}
         <div className="absolute -top-[10%] -right-[5%] w-[50%] h-[50%] rounded-full bg-indigo-500/10 dark:bg-indigo-500/15 blur-[120px]" />
         {/* Bottom Left Glow */}
         <div className="absolute -bottom-[10%] -left-[5%] w-[50%] h-[50%] rounded-full bg-indigo-600/10 dark:bg-indigo-600/15 blur-[120px]" />
 
-        <h1 className="hidden md:block absolute bottom-4 left-1/2 -translate-x-1/2 text-8xl font-black pointer-events-none md:text-[20vw] text-transparent bg-clip-text bg-linear-to-t from-zinc-300 dark:from-zinc-900 to-indigo-400 dark:to-indigo-900 opacity-10">
+        {/* Changed: opacity-10 to opacity-30 for visibility testing */}
+        <h1 className="absolute bottom-4 left-1/2 -translate-x-1/2 text-8xl font-black pointer-events-none md:text-[20vw] text-transparent bg-clip-text bg-linear-to-t from-zinc-300 dark:from-zinc-900 to-indigo-400 dark:to-indigo-900 opacity-30">
           Upnixo
         </h1>
       </div>

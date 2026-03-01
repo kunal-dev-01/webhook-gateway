@@ -7,11 +7,11 @@ const AuthLayout = lazy(() => import("./layouts/AuthLayout"));
 const DashboardLayout = lazy(() => import("./layouts/DashboardLayout"));
 
 // AUTH PAGES
-const Login = lazy(() => import("./pages/auth/Login"));
-const Register = lazy(() => import("./pages/auth/Register"));
-const VerifyEmail = lazy(() => import("./pages/auth/VerifyEmail"));
-const ForgotPassword = lazy(() => import("./pages/auth/ForgotPassword"));
-const ResetPassword = lazy(() => import("./pages/auth/ResetPassword"));
+const Login = lazy(() => import("./pages/auth/login/Index"));
+const Register = lazy(() => import("./pages/auth/register/Index"));
+const VerifyEmail = lazy(() => import("./pages/auth/verify/Index"));
+const ForgotPassword = lazy(() => import("./pages/auth/forgot/Index"));
+const ResetPassword = lazy(() => import("./pages/auth/reset/Index"));
 
 // DASHBOARD PAGES
 const Dashboard = lazy(() => import("./pages/dashboard/Dashboard"));
