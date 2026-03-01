@@ -301,6 +301,7 @@ func main() {
 	// Create Fiber App
 	app := fiber.New(fiber.Config{
 		AppName:               "Upnixo Authentication Service",
+		Prefork:               deps.Config.App.IsProduction(),
 		DisableStartupMessage: true,
 		ErrorHandler:          sharedErrors.FiberHandler,
 		BodyLimit:             deps.Config.App.RequestBodyLimit,
@@ -457,13 +458,5 @@ func getAllowedOrigins(origins []string) string {
 	if len(origins) == 0 {
 		return "*"
 	}
-	
-	var result strings.Builder
-	for i, origin := range origins {
-		if i > 0 {
-			result.WriteString(",")
-		}
-		result.WriteString(origin)
-	}
-	return result.String()
+	return strings.Join(origins, ",") // Simple and much cleaner!
 }
